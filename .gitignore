@@ -36,5 +36,19 @@
 /PluginExamples/C#/BareBones/obj
 /PluginExamples/VB/BareBones/bin
 /PluginExamples/VB/BareBones/obj
+/PluginExamples/F#/BareBones/bin
+/PluginExamples/F#/BareBones/obj
 
 cecil
+
+/tdsm-patcher/KopiLua.dll
+/tdsm-patcher/NLua.dll
+/tdsm-patcher/tdsm.api.dll
+/tdsm-patcher/tdsm.api.pdb
+/tdsm-patcher/tdsm.microsoft.exe
+/tdsm-patcher/tdsm.mono.exe
+/tdsm-patcher/corenet
+/tdsm-patcher/Plugins
+/tdsm-patcher/tdsm-patcher.exe
+/tdsm-patcher/Vestris.ResourceLib.dll
+/tdsm-patcher/project.lock.json

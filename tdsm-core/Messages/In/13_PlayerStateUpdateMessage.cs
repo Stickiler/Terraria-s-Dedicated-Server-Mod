@@ -16,9 +16,9 @@ namespace tdsm.core.Messages.In
 
         public override void Process(int whoAmI, byte[] readBuffer, int length, int num)
         {
-            if (ReadByte(readBuffer) != whoAmI)
+			if (ReadByte(readBuffer) != whoAmI && Entry.EnableCheatProtection)
             {
-                tdsm.api.Callbacks.NetplayCallback.slots[whoAmI].Kick("Cheating detected (PLAYER_STATE_UPDATE forgery).");
+                Terraria.Netplay.Clients[whoAmI].Kick("Cheating detected (PLAYER_STATE_UPDATE forgery).");
                 return;
             }
             var player = Main.player[whoAmI];
@@ -74,7 +74,7 @@ namespace tdsm.core.Messages.In
             args.ApplyParams(player);
             args.ApplyKeys(player);
 
-            if (tdsm.api.Callbacks.NetplayCallback.slots[whoAmI].IsPlaying())
+            if (Terraria.Netplay.Clients[whoAmI].IsPlaying())
             {
                 NewNetMessage.SendData(13, -1, whoAmI, String.Empty, whoAmI);
             }

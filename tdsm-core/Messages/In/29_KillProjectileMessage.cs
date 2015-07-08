@@ -21,9 +21,9 @@ namespace tdsm.core.Messages.In
             int identity = (int)ReadInt16(readBuffer);
             int playerId = (int)ReadByte(readBuffer);
 
-            if (playerId != whoAmI)
+			if (playerId != whoAmI && Entry.EnableCheatProtection)
             {
-                tdsm.api.Callbacks.NetplayCallback.slots[whoAmI].Kick("Cheating detected (KILL_PROJECTILE forgery).");
+                Terraria.Netplay.Clients[whoAmI].Kick("Cheating detected (KILL_PROJECTILE forgery).");
                 return;
             }
 

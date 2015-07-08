@@ -7,15 +7,151 @@ using tdsm.api;
 using tdsm.api.Command;
 using tdsm.api.Misc;
 using tdsm.core.Definitions;
-using tdsm.core.Logging;
-using tdsm.core.Messages.Out;
-using tdsm.core.ServerCore;
+using tdsm.api.Logging;
+//using tdsm.core.Messages.Out;
+//using tdsm.core.ServerCore;
 using Terraria;
 
 namespace tdsm.core
 {
     public partial class Entry
     {
+        private static object GetDataValue(Type dataType, string val)
+        {
+            switch (dataType.Name)
+            {
+                case "Boolean":
+                    return Boolean.Parse(val);
+                case "Int16":
+                    return Int16.Parse(val);
+                case "Int32":
+                    return Int32.Parse(val);
+                case "Int64":
+                    return Int64.Parse(val);
+                case "Byte":
+                    return Byte.Parse(val);
+                case "Double":
+                    return Double.Parse(val);
+                case "Single":
+                    return Single.Parse(val);
+                default:
+                    throw new CommandError("Unsupported datatype");
+            }
+        }
+
+        /// <summary>
+        /// Allows on the fly variable modifications
+        /// </summary>
+        /// <param name="sender">Sender.</param>
+        /// <param name="args">Arguments.</param>
+        public void VariableMan(ISender sender, ArgumentList args)
+        {
+            // var <exec|field>
+            // var field <namespace.type> <fieldname>
+            // var field <namespace.type> <fieldname> <valuetobeset>
+
+            // var exec <namespace.type> <methodname>
+            //No arguments supported yet
+            var cmd = args.GetString(0);
+
+            if (cmd == "field")
+            {
+                var type = args.GetString(1);
+                var mem = args.GetString(2);
+
+                //Find the type
+                var at = Type.GetType(type);
+                if (at == null) at = System.Reflection.Assembly.GetEntryAssembly().GetType(type);
+                if (at == null) at = System.Reflection.Assembly.GetCallingAssembly().GetType(type);
+                if (at == null) at = System.Reflection.Assembly.GetExecutingAssembly().GetType(type);
+                if (at == null) throw new CommandError("Invalid type: " + type);
+
+                //Find the field
+                var am = at.GetField(mem);
+                if (am == null) throw new CommandError("Invalid field: " + mem);
+
+                string val = null;
+                if (args.TryGetString(3, out val))
+                {
+                    object data = GetDataValue(am.FieldType, val);
+                    am.SetValue(null, data);
+
+                    var v = am.GetValue(null);
+                    if (v != null) val = v.ToString();
+                    else val = "null";
+                    sender.Message("Value is now: " + val);
+                }
+                else
+                {
+                    var v = am.GetValue(null);
+                    if (v != null) val = v.ToString();
+                    else val = "null";
+                    sender.Message("Value: " + val);
+                }
+            }
+            else if (cmd == "prop")
+            {
+                var type = args.GetString(1);
+                var prop = args.GetString(2);
+
+                //Find the type
+                var at = Type.GetType(type);
+                if (at == null) at = System.Reflection.Assembly.GetEntryAssembly().GetType(type);
+                if (at == null) at = System.Reflection.Assembly.GetCallingAssembly().GetType(type);
+                if (at == null) at = System.Reflection.Assembly.GetExecutingAssembly().GetType(type);
+                if (at == null) throw new CommandError("Invalid type: " + type);
+
+                //Find the field
+                var am = at.GetProperty(prop);
+                if (am == null) throw new CommandError("Invalid property: " + prop);
+
+                string val = null;
+                if (args.TryGetString(3, out val))
+                {
+                    object data = GetDataValue(am.PropertyType, val);
+                    am.SetValue(null, data, null);
+
+                    var v = am.GetValue(null, null);
+                    if (v != null) val = v.ToString();
+                    else val = "null";
+                    sender.Message("Value is now: " + val);
+                }
+                else
+                {
+                    var v = am.GetValue(null, null);
+                    if (v != null) val = v.ToString();
+                    else val = "null";
+                    sender.Message("Value: " + val);
+                }
+            }
+            else if (cmd == "exec")
+            {
+                var type = args.GetString(1);
+                var mthd = args.GetString(2);
+
+                //Find the type
+                var at = Type.GetType(type);
+                if (at == null) at = System.Reflection.Assembly.GetEntryAssembly().GetType(type);
+                if (at == null) at = System.Reflection.Assembly.GetCallingAssembly().GetType(type);
+                if (at == null) at = System.Reflection.Assembly.GetExecutingAssembly().GetType(type);
+                if (at == null) throw new CommandError("Invalid type: " + type);
+
+                //Find the field
+                var am = at.GetMethod(mthd);
+                if (am == null) throw new CommandError("Invalid method: " + mthd);
+
+                var prms = am.GetParameters();
+                if (prms.Length == 0)
+                {
+                    var res = am.Invoke(null, null);
+                    var result = res == null ? "null" : res.ToString();
+                    sender.Message("Result: " + result);
+                }
+                else sender.Message("Arguments are not yet supported for exec");
+            }
+            else sender.Message("Unsupported var command: " + cmd);
+        }
+
         /// <summary>
         /// Informs the sender of what system TDSM is running on
         /// </summary>
@@ -63,7 +199,9 @@ namespace tdsm.core
             args.ParseNone();
 
             Tools.NotifyAllOps("Exiting on request.");
-            ServerCore.Server.StopServer();
+            //ServerCore.Server.StopServer();
+            //            Terraria.Netplay.TcpListener.StopListening();
+            Terraria.IO.WorldFile.saveWorld ();
             Terraria.Netplay.disconnect = true;
 
             throw new ExitException(sender.SenderName + " requested that TDSM is to shutdown.");
@@ -170,7 +308,7 @@ namespace tdsm.core
         {
             args.ParseNone();
 
-            var players = from p in Main.player where p.active select p.Name;
+            var players = from p in Main.player where p.active select String.Format("{0}, ({1})", p.Name, p.IPAddress);
             var line = String.Concat("Current players:", String.Join(", ", players), (players.Count() > 0) ? "." : String.Empty);
 
             sender.Message(line, 255, 255, 240, 20);
@@ -206,7 +344,8 @@ namespace tdsm.core
             if (on > 0)
                 os = "Ops: " + String.Join(", ", ops);
 
-            sender.Message(string.Concat(os, ps, " (", on + pn, "/", SlotManager.MaxSlots, ")"), 255, 255, 240, 20);
+            //sender.Message(string.Concat(os, ps, " (", on + pn, "/", SlotManager.MaxSlots, ")"), 255, 255, 240, 20);
+            sender.Message(string.Concat(os, ps, " (", on + pn, "/", Netplay.MaxConnections, ")"), 255, 255, 240, 20);
         }
 
         /// <summary>
@@ -220,9 +359,9 @@ namespace tdsm.core
             {
                 ProgramLog.Log("* " + sender.SenderName + " " + message);
                 if (sender is Player)
-                    NewNetMessage.SendData(25, -1, -1, "* " + sender.SenderName + " " + message, 255, 200, 100, 0);
+                    NetMessage.SendData(25, -1, -1, "* " + sender.SenderName + " " + message, 255, 200, 100, 0);
                 else
-                    NewNetMessage.SendData(25, -1, -1, "* " + sender.SenderName + " " + message, 255, 238, 130, 238);
+                    NetMessage.SendData(25, -1, -1, "* " + sender.SenderName + " " + message, 255, 238, 130, 238);
             }
             else
             {
@@ -249,7 +388,7 @@ namespace tdsm.core
             if (!String.IsNullOrEmpty(message))
             {
                 ProgramLog.Log("<" + sender.SenderName + "> " + ((sender is ConsoleSender) ? String.Empty : "SERVER: ") + message);
-                NewNetMessage.SendData(25, -1, -1, "SERVER: " + message, 255, 238, 130, 238);
+                NetMessage.SendData(25, -1, -1, "SERVER: " + message, 255, 238, 130, 238);
             }
             else
             {
@@ -276,7 +415,7 @@ namespace tdsm.core
                 }
 
                 //subject.HealEffect(subject.statLifeMax, true);
-                NewNetMessage.SendData(35, -1, -1, String.Empty, subject.whoAmi, (float)subject.statLifeMax, 0f, 0f, 0);
+                NetMessage.SendData(35, -1, -1, String.Empty, subject.whoAmI, (float)subject.statLifeMax, 0f, 0f, 0);
             }
             else if (args.TryPop("-all"))
             {
@@ -284,7 +423,7 @@ namespace tdsm.core
                 {
                     if (plr.active)
                     {
-                        NewNetMessage.SendData(35, -1, -1, String.Empty, plr.whoAmi, (float)plr.statLifeMax, 0f, 0f, 0);
+                        NetMessage.SendData(35, -1, -1, String.Empty, plr.whoAmI, (float)plr.statLifeMax, 0f, 0f, 0);
                     }
                 }
             }
@@ -300,7 +439,7 @@ namespace tdsm.core
         {
             Tools.NotifyAllOps("Saving world.....");
 
-            WorldFile.saveWorld();
+            Terraria.IO.WorldFile.saveWorld();
 
             while (WorldGen.saveLock)
                 Thread.Sleep(100);
@@ -471,7 +610,8 @@ namespace tdsm.core
                         }
                 }
             }
-            NewNetMessage.SendData((int)Packet.WORLD_DATA); //Update Data
+
+            NetMessage.SendData((int)Packet.WORLD_DATA); //Update Data
             var current = WorldTime.Parse(World.GetParsableTime()).Value;
             Tools.NotifyAllPlayers(String.Format("Time set to {0} ({1}) by {2}", current.ToString(), current.GameTime, sender.SenderName), Color.Green);
         }
@@ -528,14 +668,14 @@ namespace tdsm.core
 
             Player player = sender as Player;
             int amount;
-            if (args.Count > 3)
+            if (args.Count > 4)
                 throw new CommandError("Too many arguments");
             else if (sender is ConsoleSender && args.Count <= 2)
             {
                 if (!Netplay.anyClients || !Tools.TryGetFirstOnlinePlayer(out player))
                     throw new CommandError("No players online.");
             }
-            else if (args.Count == 3)
+            else if (args.Count >= 3)
                 player = args.GetOnlinePlayer(2);
 
             var npcName = args.GetString(1).ToLower().Trim();
@@ -543,7 +683,13 @@ namespace tdsm.core
             // Get the class id of the npc
             var npcs = DefinitionManager.FindNPC(npcName);
             if (npcs.Length == 0) throw new CommandError("No npc exists by the name {0}", npcName);
-            else if (npcs.Length > 1) throw new CommandError("Too many results for {0}, total count {1}", npcName, npcs.Length);
+            else if (npcs.Length > 1)
+            {
+                bool first;
+                args.TryGetBool(3, out first);
+
+                if (!first) throw new CommandError("Too many results for {0}, total count {1}", npcName, npcs.Length);
+            }
 
             var npc = npcs[0];
             if (npc.Boss.HasValue && npc.Boss == true) throw new CommandError("This NPC can only be summoned by the SPAWNBOSS command.");
@@ -890,8 +1036,9 @@ namespace tdsm.core
                 int s;
                 args.ParseOne(out s);
 
-                var slot = tdsm.api.Callbacks.NetplayCallback.slots[s];
+                var slot = Terraria.Netplay.Clients[s];
 
+#if TDSMServer
                 if (slot.State() != SlotState.VACANT)
                 {
                     slot.Kick("You have been kicked by " + sender.SenderName + ".");
@@ -904,6 +1051,9 @@ namespace tdsm.core
                 {
                     sender.Message("Kick slot is empty");
                 }
+#else
+                NetMessage.SendData(2, slot.Id, -1, "Kicked from server.", 0, 0f, 0f, 0f, 0, 0, 0);
+#endif
             }
             else
             {
@@ -917,7 +1067,7 @@ namespace tdsm.core
                 }
 
                 player.Kick("You have been kicked by " + sender.SenderName + ".");
-                NewNetMessage.SendData(25, -1, -1, player.Name + " has been kicked by " + sender.SenderName + ".", 255);
+                NetMessage.SendData(25, -1, -1, player.Name + " has been kicked by " + sender.SenderName + ".", 255);
             }
         }
 
@@ -1138,47 +1288,49 @@ namespace tdsm.core
 
             switch (options)
             {
-                case WorldZone.Blood:
-                    ply = (from x in Main.player where x.zoneBlood select x).ToArray();
-                    if (ply.Length > 0)
-                        return ply[Main.rand.Next(0, ply.Length - 1)];
-                    break;
-                case WorldZone.Candle:
-                    ply = (from x in Main.player where x.zoneCandle select x).ToArray();
-                    if (ply.Length > 0)
-                        return ply[Main.rand.Next(0, ply.Length - 1)];
-                    break;
-                case WorldZone.Dungeon:
-                    ply = (from x in Main.player where x.zoneDungeon select x).ToArray();
-                    if (ply.Length > 0)
-                        return ply[Main.rand.Next(0, ply.Length - 1)];
-                    break;
-                case WorldZone.Holy:
-                    ply = (from x in Main.player where x.zoneHoly select x).ToArray();
-                    if (ply.Length > 0)
-                        return ply[Main.rand.Next(0, ply.Length - 1)];
-                    break;
-                case WorldZone.Meteor:
-                    ply = (from x in Main.player where x.zoneMeteor select x).ToArray();
-                    if (ply.Length > 0)
-                        return ply[Main.rand.Next(0, ply.Length - 1)];
-                    break;
-                case WorldZone.Snow:
-                    ply = (from x in Main.player where x.zoneSnow select x).ToArray();
-                    if (ply.Length > 0)
-                        return ply[Main.rand.Next(0, ply.Length - 1)];
-                    break;
-                case WorldZone.Jungle:
-                    ply = (from x in Main.player where x.zoneJungle select x).ToArray();
-                    if (ply.Length > 0)
-                        return ply[Main.rand.Next(0, ply.Length - 1)];
-                    break;
-                case WorldZone.Hell:
-                    ply = (from x in Main.player where x.zoneHoly select x).ToArray();
-                    if (ply.Length > 0)
-                        return ply[Main.rand.Next(0, ply.Length - 1)];
-                    break;
-                case WorldZone.Any:
+                    //1.3
+                //case WorldZone.Blood:
+                //    ply = (from x in Main.player where x.zoneBlood select x).ToArray();
+                //    if (ply.Length > 0)
+                //        return ply[Main.rand.Next(0, ply.Length - 1)];
+                //    break;
+                //case WorldZone.Candle:
+                //    ply = (from x in Main.player where x.zoneCandle select x).ToArray();
+                //    if (ply.Length > 0)
+                //        return ply[Main.rand.Next(0, ply.Length - 1)];
+                //    break;
+                //case WorldZone.Dungeon:
+                //    ply = (from x in Main.player where x.zoneDungeon select x).ToArray();
+                //    if (ply.Length > 0)
+                //        return ply[Main.rand.Next(0, ply.Length - 1)];
+                //    break;
+                //case WorldZone.Holy:
+                //    ply = (from x in Main.player where x.zoneHoly select x).ToArray();
+                //    if (ply.Length > 0)
+                //        return ply[Main.rand.Next(0, ply.Length - 1)];
+                //    break;
+                //case WorldZone.Meteor:
+                //    ply = (from x in Main.player where x.zoneMeteor select x).ToArray();
+                //    if (ply.Length > 0)
+                //        return ply[Main.rand.Next(0, ply.Length - 1)];
+                //    break;
+                //case WorldZone.Snow:
+                //    ply = (from x in Main.player where x.zoneSnow select x).ToArray();
+                //    if (ply.Length > 0)
+                //        return ply[Main.rand.Next(0, ply.Length - 1)];
+                //    break;
+                //case WorldZone.Jungle:
+                //    ply = (from x in Main.player where x.zoneJungle select x).ToArray();
+                //    if (ply.Length > 0)
+                //        return ply[Main.rand.Next(0, ply.Length - 1)];
+                //    break;
+                //case WorldZone.Hell:
+                //    ply = (from x in Main.player where x.zoneHoly select x).ToArray();
+                //    if (ply.Length > 0)
+                //        return ply[Main.rand.Next(0, ply.Length - 1)];
+                //    break;
+                //case WorldZone.Any:
+                default:
                     if (Main.player.Length > 0)
                         return Main.player[Main.rand.Next(0, Main.player.Length - 1)];
                     break;
@@ -1284,7 +1436,7 @@ namespace tdsm.core
                 if (NightOverride)
                 {
                     World.SetTime(16200.0, false);
-                    NewNetMessage.SendData((int)Packet.WORLD_DATA); //Update Data
+                    NetMessage.SendData((int)Packet.WORLD_DATA); //Update Data
                 }
 
                 foreach (var def in bosses)
@@ -1329,7 +1481,7 @@ namespace tdsm.core
                     //if (!(sender is ConsoleSender))
                     //    ProgramLog.Log("{0} summoned boss {1} at slot {2}.", sender.SenderName, name, BossSlot);
 
-                    NPC.SpawnOnPlayer((def.Value[0] as Player).whoAmi, def.Key);
+                    NPC.SpawnOnPlayer((def.Value[0] as Player).whoAmI, def.Key);
                 }
             }
             else
@@ -1345,6 +1497,7 @@ namespace tdsm.core
         /// <param name="args">Arguments sent with command</param>
         public void ItemRejection(ISender sender, ArgumentList args)
         {
+#if TDSMServer
             string exception;
             if (args.TryParseOne<String>("-add", out exception))
             {
@@ -1379,6 +1532,7 @@ namespace tdsm.core
             {
                 throw new CommandError("Expected argument -add|-remove|-clear");
             }
+#endif
         }
 
         /// <summary>
@@ -1398,7 +1552,7 @@ namespace tdsm.core
                 return;
             }
 
-            if (player.whoAmi < 0) return;
+            if (player.whoAmI < 0) return;
 
             if (!player.Op)
             {
@@ -1413,7 +1567,7 @@ namespace tdsm.core
                 player.SetLastCostlyCommand(DateTime.Now);
             }
 
-            NewNetMessage.SendTileSquare(player.whoAmi, (int)(player.position.X / 16), (int)(player.position.Y / 16), 32);
+            NetMessage.SendTileSquare(player.whoAmI, (int)(player.position.X / 16), (int)(player.position.Y / 16), 32);
         }
 
         /// <summary>
@@ -1429,9 +1583,9 @@ namespace tdsm.core
                 throw new CommandError("Hard mode is already enabled");
 
             sender.Message("Changing to hard mode...");
-            WorldGen.hardLock = true;
+            WorldGen.IsGeneratingHardMode = true;
             Terraria.WorldGen.StartHardmode();
-            while (WorldGen.hardLock) Thread.Sleep(5);
+            while (WorldGen.IsGeneratingHardMode) Thread.Sleep(5);
             sender.Message("Hard mode is now enabled.");
         }
 
@@ -1542,8 +1696,10 @@ namespace tdsm.core
                 double time;
                 if (args.TryParseOne<Double>(out time))
                 {
-                    (args.Plugin as Entry).TimelockTime = time;
-                    (args.Plugin as Entry).UseTimeLock = true;
+                    this.TimelockTime = time;
+                    this.TimelockRain = Main.raining;
+                    this.TimelockSlimeRain = Main.slimeRain;
+                    this.UseTimeLock = true;
                 }
                 else throw new CommandError("Double expected.");
             }
@@ -1551,7 +1707,8 @@ namespace tdsm.core
 
             if ((args.Plugin as Entry).UseTimeLock)
             {
-                if (!setNow) NewNetMessage.SendData(Packet.WORLD_DATA);
+                //if (!setNow) NewNetMessage.SendData(Packet.WORLD_DATA);
+                if (!setNow) NetMessage.SendData((int)Packet.WORLD_DATA);
 
                 sender.Message(
                     String.Format("Time lock has set at {0}.", (args.Plugin as Entry).TimelockTime),
@@ -1571,7 +1728,7 @@ namespace tdsm.core
             var password = args.GetString(1);
 
             Tools.NotifyAllOps("Opping " + playerName + " [" + sender.SenderName + "]", true);
-            Server.Ops.Add(playerName, password);
+            Ops.Add(playerName, password);
 
             //Player player;
             //if (args.TryGetOnlinePlayer(0, out player))
@@ -1589,7 +1746,7 @@ namespace tdsm.core
                 player.Op = true;
             }
 
-            if (!Server.Ops.Save())
+            if (!Ops.Save())
             {
                 Tools.NotifyAllOps("Failed to save op list [" + sender.SenderName + "]", true);
                 return;
@@ -1617,7 +1774,7 @@ namespace tdsm.core
             //    player.Op = false;
             //}
 
-            if (Server.Ops.Contains(playerName))
+            if (Ops.Contains(playerName))
             {
                 var player = Tools.GetPlayerByName(playerName);
                 if (player != null)
@@ -1627,9 +1784,9 @@ namespace tdsm.core
                 }
 
                 Tools.NotifyAllOps("De-Opping " + playerName + " [" + sender.SenderName + "]", true);
-                Server.Ops.Remove(playerName, true);
+                Ops.Remove(playerName, true);
 
-                if (!Server.Ops.Save())
+                if (!Ops.Save())
                 {
                     Tools.NotifyAllOps("Failed to save op list [" + sender.SenderName + "]", true);
                 }
@@ -1647,7 +1804,7 @@ namespace tdsm.core
             if (sender is Player)
             {
                 var player = sender as Player;
-                if (Server.Ops.Contains(player.name, password))
+                if (Ops.Contains(player.name, password))
                 {
                     Tools.NotifyAllOps(
                         String.Format("{0} successfully logged in.", player.Name)
@@ -1749,6 +1906,242 @@ namespace tdsm.core
                 default:
                     throw new CommandError("Not a supported serverlist command " + first);
             }
+        }
+
+        /// <summary>
+        /// Starts an event
+        /// </summary>
+        /// <param name="sender">Sending player</param>
+        /// <param name="args">Arguments sent with command</param>
+        public void WorldEvent(ISender sender, ArgumentList args)
+        {
+            string first;
+            args.TryPopOne(out first);
+            switch (first)
+            {
+                case "eclipse":
+                    if (!Main.eclipse)
+                    {
+                        _disableActiveEvents(sender);
+
+                        World.SetTime(0);
+                        //tdsm.api.Callbacks.MainCallback.StartEclipse = true;
+                        Main.eclipse = true;
+
+                        NetMessage.SendData(25, -1, -1, Lang.misc[20], 255, 50f, 255f, 130f, 0);
+                        NetMessage.SendData((int)Packet.WORLD_DATA);
+
+                        ProgramLog.Admin.Log(Lang.misc[20]);
+                    }
+                    else
+                    {
+                        Main.eclipse = false;
+                        sender.Message("The eclipse was disabled.");
+                    }
+                    break;
+                case "snowmoon":
+                    if (!Main.snowMoon)
+                    {
+                        _disableActiveEvents(sender);
+                        World.SetTime(16200.0, false);
+                        NetMessage.SendData(25, -1, -1, Lang.misc[34], 255, 50f, 255f, 130f, 0);
+                        Main.startSnowMoon();
+                        NetMessage.SendData((int)Packet.WORLD_DATA);
+
+                        ProgramLog.Admin.Log(Lang.misc[34]);
+                        ProgramLog.Admin.Log("First Wave: Zombie Elf and Gingerbread Man");
+                    }
+                    else
+                    {
+                        Main.stopMoonEvent();
+                        sender.Message("The snow moon was disabled.");
+                    }
+                    break;
+                case "pumpkinmoon":
+                    if (!Main.pumpkinMoon)
+                    {
+                        _disableActiveEvents(sender);
+                        World.SetTime(16200.0, false);
+                        NetMessage.SendData(25, -1, -1, Lang.misc[31], 255, 50f, 255f, 130f, 0);
+                        Main.startPumpkinMoon();
+                        NetMessage.SendData((int)Packet.WORLD_DATA);
+
+                        ProgramLog.Admin.Log(Lang.misc[31]);
+                        ProgramLog.Admin.Log("First Wave: " + Main.npcName[305]);
+                    }
+                    else
+                    {
+                        Main.stopMoonEvent();
+                        sender.Message("The pumpkin moon was disabled.");
+                    }
+                    break;
+                case "bloodmoon":
+                    if (!Main.bloodMoon)
+                    {
+                        _disableActiveEvents(sender);
+                        World.SetTime(0, false);
+                        //tdsm.api.Callbacks.MainCallback.StartEclipse = true;
+                        Main.bloodMoon = true;
+                        NetMessage.SendData((int)Packet.WORLD_DATA);
+                        NetMessage.SendData(25, -1, -1, Lang.misc[8], 255, 50f, 255f, 130f, 0);
+
+                        ProgramLog.Admin.Log(Lang.misc[8]);
+                    }
+                    else
+                    {
+                        Main.bloodMoon = false;
+                        sender.Message("The blood moon was disabled.");
+                    }
+                    break;
+                case "slimerain":
+                    if (!Main.slimeRain)
+                    {
+                        _disableActiveEvents(sender);
+                        Main.slimeRain = true;
+                        NetMessage.SendData((int)Packet.WORLD_DATA);
+                        Main.StartSlimeRain();
+
+                        sender.Message("Slime rain was enabled.");
+                    }
+                    else
+                    {
+                        Main.slimeRain = false;
+                        NetMessage.SendData((int)Packet.WORLD_DATA);
+                        sender.Message("The slime rain was disabled.");
+                    }
+                    break;
+                //case "rain":
+                //    if (!Main.raining)
+                //    {
+                //        _disableActiveEvents(sender);
+                //        Main.raining = true;
+                //        NetMessage.SendData((int)Packet.WORLD_DATA);
+
+                //        sender.Message("Rain was enabled.");
+                //    }
+                //    else
+                //    {
+                //        Main.raining = false;
+                //        NetMessage.SendData((int)Packet.WORLD_DATA);
+                //        sender.Message("The rain was disabled.");
+                //    }
+                //    break;
+                default:
+                    throw new CommandError("Not a supported event " + first);
+            }
+        }
+
+        //TODO clean code, only have command methods in this file; everything else in entry perhaps.
+        static void _disableActiveEvents(ISender sender)
+        {
+            if (Main.bloodMoon)
+            {
+                Main.bloodMoon = false;
+                sender.Message("The blood moon was disabled.");
+            }
+            if (Main.eclipse)
+            {
+                Main.eclipse = false;
+                sender.Message("The eclipse was disabled.");
+            }
+            if (Main.snowMoon)
+            {
+                Main.snowMoon = false;
+                sender.Message("The snow moon was disabled.");
+            }
+            if (Main.pumpkinMoon)
+            {
+                Main.pumpkinMoon = false;
+                sender.Message("The pumpkin moon was disabled.");
+            }
+            if (Main.slimeRain)
+            {
+                //Main.StopSlimeRain();
+                Main.slimeRain = false;
+                sender.Message("The slime rain was disabled.");
+            }
+            if (Main.raining)
+            {
+                //Main.StopRain();
+                Main.raining = false;
+                sender.Message("The rain was disabled.");
+            }
+        }
+
+        Task _tskWaitForPlayers;
+        private bool? _waitFPState;
+
+        /// <summary>
+        /// Restart and reload the world without reloading the application
+        /// </summary>
+        /// <param name="sender">Sending player</param>
+        /// <param name="args">Arguments sent with command</param>
+        public void Restart(ISender sender, ArgumentList args)
+        {
+#if TDSMServer
+            string cmd = null;
+            args.TryGetString(0, out cmd);
+
+            if (String.IsNullOrEmpty(cmd))
+                PerformRestart();
+            else if (cmd == "-wait")
+            {
+                RestartWhenNoPlayers = !RestartWhenNoPlayers;
+
+                if (_waitFPState == null) _waitFPState = Server.AcceptNewConnections;
+
+                if (RestartWhenNoPlayers)
+                {
+                    Server.AcceptNewConnections = false;
+                    if (ClientConnection.All.Count == 0)
+                    {
+                        PerformRestart();
+                        return;
+                    }
+
+                    if (_tskWaitForPlayers == null)
+                    {
+                        _tskWaitForPlayers = new Task()
+                        {
+                            Enabled = true,
+                            Method = (tsk) =>
+                            {
+                                Tools.NotifyAllPlayers("The server is waiting to restart.", Color.Orange, false);
+                                Tools.NotifyAllPlayers("Please finish what you are doing and disconnect.", Color.Orange, false);
+
+                                var players = from p in Terraria.Main.player where p.active orderby p.name select p.Name;
+
+                                var pn = players.Count();
+                                if (pn == 0) return;
+
+                                ProgramLog.Admin.Log("Notified player(s) of restart: " + String.Join(", ", players));
+                            },
+                            Trigger = 60
+                        };
+                        Tasks.Schedule(_tskWaitForPlayers);
+                    }
+                    else
+                    {
+                        _tskWaitForPlayers.Enabled = true;
+                    }
+                }
+                else
+                {
+                    Server.AcceptNewConnections = _waitFPState.Value; //Restore
+                    if (_tskWaitForPlayers != null && _tskWaitForPlayers.Enabled)
+                    {
+                        if (_tskWaitForPlayers.HasTriggered)
+                        {
+                            Tools.NotifyAllPlayers("Restart was terminated.", Color.Orange);
+                        }
+                        _tskWaitForPlayers.Enabled = false;
+                    }
+                }
+
+                sender.Message("The server is " + (_tskWaitForPlayers != null && _tskWaitForPlayers.Enabled ? "waiting to restart" : "not restarting"));
+            }
+            else throw new CommandError("No restart command: " + cmd);
+#endif
         }
     }
 }

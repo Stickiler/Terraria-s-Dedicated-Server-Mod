@@ -19,9 +19,9 @@ namespace tdsm.core.Messages.In
             int start = num - 1;
             int playerIndex = ReadByte(readBuffer);
 
-            if (playerIndex != whoAmI)
+			if (playerIndex != whoAmI && Entry.EnableCheatProtection)
             {
-                tdsm.api.Callbacks.NetplayCallback.slots[whoAmI].Kick("Cheating detected (KILL_PLAYER forgery).");
+                Terraria.Netplay.Clients[whoAmI].Kick("Cheating detected (KILL_PLAYER forgery).");
                 return;
             }
 
@@ -29,7 +29,7 @@ namespace tdsm.core.Messages.In
 
             var ctx = new HookContext
             {
-                Connection = (tdsm.api.Callbacks.NetplayCallback.slots[whoAmI] as ServerSlot).conn,
+                Connection = (Terraria.Netplay.Clients[whoAmI] as ServerSlot).conn,
                 Sender = player,
                 Player = player,
             };

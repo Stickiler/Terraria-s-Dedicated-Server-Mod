@@ -1,4 +1,7 @@
-﻿using System;
+﻿//#define WebInterface
+//#define TDSMServer
+
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -7,11 +10,10 @@ using tdsm.api.Callbacks;
 using tdsm.api.Command;
 using tdsm.api.Plugin;
 using tdsm.core.Definitions;
-using tdsm.core.Logging;
-using tdsm.core.Messages.Out;
+using tdsm.api.Logging;
 using tdsm.core.Misc;
+using tdsm.api.Misc;
 using tdsm.core.RemoteConsole;
-using tdsm.core.ServerCore;
 
 namespace tdsm.core
 {
@@ -20,6 +22,7 @@ namespace tdsm.core
         public const Int32 CoreBuild = 2;
 
         private bool _useTimeLock;
+
         public bool UseTimeLock
         {
             get
@@ -31,10 +34,18 @@ namespace tdsm.core
                 TimelockTime = Terraria.Main.time;
             }
         }
+
         public double TimelockTime { get; set; }
 
+        public bool TimelockRain { get; set; }
+
+        public bool TimelockSlimeRain { get; set; }
+
         public static string RConHashNonce { get; set; }
+
         public static string RConBindAddress { get; set; }
+
+        public static bool EnableCheatProtection { get; set; }
 
         private bool VanillaOnly
         {
@@ -46,19 +57,28 @@ namespace tdsm.core
             {
                 if (value)
                 {
-                    if (IsEnabled) PluginManager.DisablePlugin(this);
+                    if (IsEnabled)
+                        PluginManager.DisablePlugin(this);
                 }
                 else
                 {
-                    if (!IsEnabled) PluginManager.EnablePlugin(this);
+                    if (!IsEnabled)
+                        PluginManager.EnablePlugin(this);
                 }
             }
         }
 
         public bool StopNPCSpawning { get; set; }
 
+        public bool RunServerCore { get; set; }
+
         private string _webServerAddress { get; set; }
+
         private string _webServerProvider { get; set; }
+
+        public bool RestartWhenNoPlayers { get; set; }
+
+        public static DataRegister Ops { get; private set; }
 
         public Entry()
         {
@@ -75,6 +95,8 @@ namespace tdsm.core
 
             tdsm.api.Callbacks.MainCallback.StatusTextChange = OnStatusTextChanged;
             tdsm.api.Callbacks.MainCallback.UpdateServer = OnUpdateServer;
+            EnableCheatProtection = true;
+            RunServerCore = true;
         }
 
         protected override void Initialized(object state)
@@ -87,10 +109,18 @@ namespace tdsm.core
                 ProgramLog.Log("TDSM Rebind core build {0}", this.Version);
 
                 Tools.SetWriteLineMethod(ProgramLog.Log, OnLogFinished);
+                ConsoleSender.DefaultColour = ConsoleColor.Gray;
+                //ConsoleSender.SetMethod((msg, r, g, b) =>
+                //{
+                //    Console.ForegroundColor = FromColor((byte)r, (byte)g, (byte)b);
+                //    Console.WriteLine(msg);
+                //});
             }
 
+            Ops = new DataRegister(System.IO.Path.Combine(Globals.DataPath, "ops.txt"));
+#if WebInterface
             WebInterface.WebPermissions.Load();
-
+#endif
             AddCommand("platform")
                 .WithAccessLevel(AccessLevel.PLAYER)
                 .WithDescription("Show what type of server is running TDSM")
@@ -222,7 +252,7 @@ namespace tdsm.core
                 .WithAccessLevel(AccessLevel.PLAYER)
                 .WithDescription("3rd person talk")
                 .WithHelpText("<message> - Message to display in third person.")
-                //.SetDefaultUsage() //This was causing an additional "me" to be displayed in the help commmand syntax.
+            //.SetDefaultUsage() //This was causing an additional "me" to be displayed in the help commmand syntax.
                 .WithPermissionNode("tdsm.me")
                 .Calls(this.Action);
 
@@ -308,7 +338,7 @@ namespace tdsm.core
                 .WithDescription("Enables hard mode.")
                 .WithPermissionNode("tdsm.hardmode")
                 .Calls(this.HardMode);
-
+            
             AddCommand("rcon")
                 .WithDescription("Manage remote console access.")
                 .WithAccessLevel(AccessLevel.REMOTE_CONSOLE)
@@ -330,7 +360,7 @@ namespace tdsm.core
             AddCommand("invasion")
                 .WithDescription("Begins an invasion")
                 .WithAccessLevel(AccessLevel.OP)
-                .WithHelpText("goblin|frost|pirate")
+                .WithHelpText("goblin|frost|pirate|martian")
                 .WithHelpText("-custom <npc id or name> <npc id or name> ...")
                 .WithHelpText("stop|end|cancel")
                 .WithPermissionNode("tdsm.invasion")
@@ -349,6 +379,63 @@ namespace tdsm.core
                 .WithPermissionNode("tdsm.serverlist")
                 .Calls(this.ServerList);
 
+            AddCommand("var")
+                .WithAccessLevel(AccessLevel.OP)
+                .WithDescription("Experimental variable manipulation")
+                .WithHelpText("<field|exec|prop> <namespace.classname> <fieldname|methodname>")
+                .WithHelpText("field Terraria.Main eclipse          #Get the value")
+                .WithHelpText("field Terraria.Main eclipse false    #Set the value")
+                .WithPermissionNode("tdsm.var")
+                .Calls(this.VariableMan);
+
+            AddCommand("worldevent")
+                .WithAccessLevel(AccessLevel.OP)
+                .WithDescription("Start or stop an event")
+                .WithHelpText("eclipse|bloodmoon|pumpkinmoon|snowmoon|slimerain")
+                .WithPermissionNode("tdsm.worldevent")
+                .Calls(this.WorldEvent);
+#if TDSMServer
+            AddCommand("maxplayers")
+                .WithAccessLevel(AccessLevel.REMOTE_CONSOLE)
+                .WithDescription("Set the maximum number of player slots.")
+                .WithHelpText("<num> - set the max number of slots")
+                .WithHelpText("<num> <num> - also set the number of overlimit slots")
+                .WithPermissionNode("tdsm.maxplayers")
+                .Calls(SlotManager.MaxPlayersCommand);
+
+            AddCommand("q")
+                .WithAccessLevel(AccessLevel.OP)
+                .WithDescription("List connections waiting in queues.")
+                .WithHelpText("q")
+                .WithPermissionNode("tdsm.q")
+                .Calls(SlotManager.QCommand);
+
+            AddCommand("conn")
+                .WithAccessLevel(AccessLevel.OP)
+                .WithDescription("Accept new connections.")
+                .WithPermissionNode("tdsm.conn")
+                .SetDefaultUsage()
+                .Calls(Server.Command_AcceptConnections);
+#endif
+            AddCommand("restart")
+                .WithAccessLevel(AccessLevel.OP)
+                .WithDescription("Restart the server.")
+                .WithHelpText("<no parameters>    - Restart immediately.")
+                .WithHelpText("--wait             - Wait for users to disconnect and then restart.")
+                .WithPermissionNode("tdsm.restart")
+                .Calls(this.Restart);
+
+#if DEBUG
+            AddCommand("repo")
+                .WithAccessLevel(AccessLevel.OP)
+                .WithDescription("Install or update plugins.")
+                .WithHelpText("<status|update|install> <plugin name>")
+                .WithHelpText("status -all")
+                .WithHelpText("update -all")
+                .WithHelpText("update \"TDSM Core Module\"")
+                .WithPermissionNode("tdsm.repo")
+                .Calls(this.RepositoryCommand);
+
             //Template for when we have more plugins
             //AddCommand("repo")
             //    .WithDescription("The tdsm update repository")
@@ -361,8 +448,12 @@ namespace tdsm.core
             //    .WithHelpText("install <plugin name>  - Installs a plugin")
             //    .WithPermissionNode("tdsm.repo")
             //    .Calls(this.Repository);
+#endif
 
-            if (!DefinitionManager.Initialise()) ProgramLog.Log("Failed to initialise definitions.");
+            if (!DefinitionManager.Initialise())
+                ProgramLog.Log("Failed to initialise definitions.");
+
+            ProgramLog.Log("TDSM Rebind core enabled");
         }
 
         void ProcessPIDFile(string pidPath)
@@ -416,6 +507,7 @@ namespace tdsm.core
         [Hook(HookOrder.NORMAL)]
         void OnInventoryItemReceived(ref HookContext ctx, ref HookArgs.InventoryItemReceived args)
         {
+#if TDSMSever
             if (Server.ItemRejections.Count > 0)
             {
                 if (args.Item != null)
@@ -433,6 +525,15 @@ namespace tdsm.core
                     }
                 }
             }
+#endif
+        }
+
+        [Hook(HookOrder.NORMAL)]
+        void OnPlayerJoin(ref HookContext ctx, ref HookArgs.PlayerEnteredGame args)
+        {
+            //The player may randomly disconnect at any time, and if it's before the point of saving then the data may be lost.
+            //So we must ensure the data is saved.
+            //ServerCharacters.CharacterManager.EnsureSave = true;
         }
 
         [Hook(HookOrder.NORMAL)]
@@ -440,29 +541,42 @@ namespace tdsm.core
         {
             ctx.SetResult(HookResult.IGNORE);
 
-            (new ProgramThread("Command", ListenForCommands)).Start();
+            (new tdsm.api.Misc.ProgramThread("Command", ListenForCommands)).Start();
         }
 
         [Hook(HookOrder.NORMAL)]
-        void OnBanAddRequired(ref HookContext ctx, ref HookArgs.AddBan args)
+        void OnPlayerDisconnected(ref HookContext ctx, ref HookArgs.PlayerLeftGame args)
         {
-            ctx.SetResult(HookResult.IGNORE);
-
-            Server.Bans.Add(args.RemoteAddress); //TODO see if port needs removing
+#if TDSMServer
+            if (RestartWhenNoPlayers && ClientConnection.All.Count - 1 == 0)
+            {
+                PerformRestart();
+            }
+#endif
         }
 
-        static void ListenForCommands()
+        //[Hook(HookOrder.NORMAL)]
+        //void OnBanAddRequired(ref HookContext ctx, ref HookArgs.AddBan args)
+        //{
+        //    ctx.SetResult(HookResult.IGNORE);
+
+        //    //Server.Bans.Add(args.RemoteAddress); //TODO see if port needs removing
+        //}
+
+        void ListenForCommands()
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             ProgramLog.Log("Ready for commands.");
-            while (!Terraria.Netplay.disconnect)
+            while (!Terraria.Netplay.disconnect /*|| Server.RestartInProgress*/)
             {
                 try
                 {
                     var ln = Console.ReadLine();
                     UserInput.CommandParser.ParseConsoleCommand(ln);
                 }
-                catch (ExitException) { }
+                catch (ExitException)
+                {
+                }
                 catch (Exception e)
                 {
                     ProgramLog.Log("Exception from command");
@@ -496,27 +610,51 @@ namespace tdsm.core
         //[Hook(HookOrder.NORMAL)]
         void OnUpdateServer(/*ref HookContext ctx, ref HookArgs.UpdateServer args*/)
         {
-            for (var i = 0; i < Terraria.Main.player.Length; i++)
-            {
-                var player = Terraria.Main.player[i];
-                //if (player.active)
-                {
-                    var conn = player.Connection;
-                    if (conn != null)
-                        conn.Flush();
-                }
-                if (Terraria.Main.player[i].active)
-                {
-                    Server.CheckSection(i, Terraria.Main.player[i].position);
+            //for (var i = 0; i < Terraria.Main.player.Length; i++)
+            //{
+            //    var player = Terraria.Main.player[i];
+            //    //if (player.active)
+            //    {
+            //        var conn = (player.Connection as ClientConnection);
+            //        if (conn != null)
+            //            conn.Flush();
+            //    }
+            //    //if (Terraria.Main.player[i].active)
+            //    //{
+            //    //    Server.CheckSection(i, Terraria.Main.player[i].position);
 
-                    //TODO SpamUpdate
-                    //if(tdsm.api.Callbacks.Netplay.slots[i].conn != null && tdsm.api.Callbacks.Netplay.slots[i].conn.Active )
-                    //    tdsm.api.Callbacks.Netplay.slots[i].conn.s
-                }
+            //    //    //TODO SpamUpdate
+            //    //    //if(tdsm.api.Callbacks.Netplay.slots[i].conn != null && tdsm.api.Callbacks.Netplay.slots[i].conn.Active )
+            //    //    //    tdsm.api.Callbacks.Netplay.slots[i].conn.s
+            //    //}
+            //}
+
+            if (_useTimeLock)
+            {
+                Terraria.Main.time = TimelockTime;
+                Terraria.Main.raining = TimelockRain;
+                Terraria.Main.slimeRain = TimelockSlimeRain;
+                //TODO: verify
             }
 
-            if (_useTimeLock) Terraria.Main.time = TimelockTime;
+            //if (Terraria.Main.ServerSideCharacter)
+            //{
+            //    ServerCharacters.CharacterManager.SaveAll();
+            //}
         }
+
+        //[Hook(HookOrder.NORMAL)]
+        //void OnPlayerAuthenticationChanged(ref HookContext ctx, ref HookArgs.PlayerAuthenticationChanged args)
+        //{
+        //    if (Terraria.Main.ServerSideCharacter)
+        //    {
+        //        var cfg = ServerCharacters.CharacterManager.LoadPlayerData(ctx.Player, true);
+        //        if (cfg != null)
+        //        {
+        //            cfg.ApplyToPlayer(ctx.Player);
+        //        }
+        //    }
+        //}
 
         void OnLogFinished()
         {
@@ -525,12 +663,12 @@ namespace tdsm.core
             ProgramLog.Close();
         }
 
-        [Hook(HookOrder.NORMAL)]
-        void OnNPCSpawned(ref HookContext ctx, ref HookArgs.NPCSpawn args)
-        {
-            if (StopNPCSpawning)
-                ctx.SetResult(HookResult.IGNORE);
-        }
+        //[Hook(HookOrder.NORMAL)]
+        //void OnNPCSpawned(ref HookContext ctx, ref HookArgs.NPCSpawn args)
+        //{
+        //    if (StopNPCSpawning)
+        //        ctx.SetResult(HookResult.IGNORE);
+        //}
 
         /////Avoid using this as much as possible (this goes for plugin developers too).
         /////The idea is to be able to add/remove a plugin from the installation without issues.
@@ -553,7 +691,7 @@ namespace tdsm.core
         //        var terraria = AssemblyDefinition.ReadAssembly(msa);
         //        //var terraria = args.Terraria as AssemblyDefinition;
 
-        //        //Replace Terraria.Netplay.serverSock references with tdsm.core.tdsm.api.Callbacks.Netplay.slots
+        //        //Replace Terraria.Netplay.Clients references with tdsm.core.tdsm.api.Callbacks.Netplay.slots
         //        var instructions = terraria.MainModule.Types
         //            .SelectMany(x => x.Methods
         //                .Where(y => y.HasBody && y.Body.Instructions != null)
@@ -606,21 +744,28 @@ namespace tdsm.core
         //        }
         //    }
         //}
-
+        
+        #if TDSMServer
         [Hook(HookOrder.NORMAL)]
         void OnDefaultServerStart(ref HookContext ctx, ref HookArgs.StartDefaultServer args)
         {
-            ProgramLog.Log("Starting TDSM's slot server...");
-            ctx.SetResult(HookResult.IGNORE);
+            if (RunServerCore)
+            {
+                ProgramLog.Log("Starting TDSM's slot server...");
+                ctx.SetResult(HookResult.IGNORE);
 
-            ServerCore.Server.StartServer();
+                ServerCore.Server.StartServer();
+            } else
+                ProgramLog.Log("Vanilla only specified, continuing on with Re-Logic code...");
         }
+#endif
 
         [Hook(HookOrder.NORMAL)]
         void OnConfigLineRead(ref HookContext ctx, ref HookArgs.ConfigurationLine args)
         {
             switch (args.Key)
             {
+#if TDSMServer
                 case "usewhitelist":
                     bool usewhitelist;
                     if (Boolean.TryParse(args.Value, out usewhitelist))
@@ -628,6 +773,7 @@ namespace tdsm.core
                         Server.WhitelistEnabled = usewhitelist;
                     }
                     break;
+#endif
                 case "vanilla-linux":
                     bool vanillaOnly;
                     if (Boolean.TryParse(args.Value, out vanillaOnly))
@@ -677,6 +823,7 @@ namespace tdsm.core
                         //WebInterface.WebServer.ServeWebFiles = serveFiles;
                     }
                     break;
+#if TDSMServer
                 case "send-queue-quota":
                     int sendQueueQuota;
                     if (Int32.TryParse(args.Value, out sendQueueQuota))
@@ -691,8 +838,37 @@ namespace tdsm.core
                         Server.OverlimitSlots = overlimitSlots;
                     }
                     break;
+#endif
                 case "pid-file":
                     ProcessPIDFile(args.Value);
+                    break;
+                case "cheat-detection":
+                    bool cheatDetection;
+                    if (Boolean.TryParse(args.Value, out cheatDetection))
+                    {
+                        EnableCheatProtection = cheatDetection;
+                    }
+                    break;
+                case "log-rotation":
+                    bool logRotation;
+                    if (Boolean.TryParse(args.Value, out logRotation))
+                    {
+                        ProgramLog.LogRotation = logRotation;
+                    }
+                    break;
+                case "server-side-characters":
+                    bool serverSideCharacters;
+                    if (Boolean.TryParse(args.Value, out serverSideCharacters))
+                    {
+                        Terraria.Main.ServerSideCharacter = serverSideCharacters;
+                    }
+                    break;
+                case "tdsm-server-core":
+                    bool runServerCore;
+                    if (Boolean.TryParse(args.Value, out runServerCore))
+                    {
+                        RunServerCore = runServerCore;
+                    }
                     break;
             }
         }
@@ -700,9 +876,23 @@ namespace tdsm.core
         [Hook(HookOrder.NORMAL)]
         void OnServerStateChange(ref HookContext ctx, ref HookArgs.ServerStateChange args)
         {
-            //ProgramLog.Log("Server state changed to: " + args.ServerChangeState.ToString());
+            ProgramLog.Log("Server state changed to: " + args.ServerChangeState.ToString());
+
+            if (args.ServerChangeState == ServerState.Initialising)
+            {
+                if (!String.IsNullOrEmpty(RConBindAddress))
+                {
+                    ProgramLog.Log("Starting RCON Server");
+                    RemoteConsole.RConServer.Start(Path.Combine(Globals.DataPath, "rcon_logins.properties"));
+                }
+            }
+            if (args.ServerChangeState == ServerState.Stopping)
+            {
+                RemoteConsole.RConServer.Stop();
+            }
 
             //if (args.ServerChangeState == ServerState.Initialising)
+#if TDSMServer
             if (!Server.IsInitialised)
             {
                 Server.Init();
@@ -731,15 +921,18 @@ namespace tdsm.core
                 //if (properties != null && File.Exists(properties.PIDFile.Trim()))
                 //File.Delete(properties.PIDFile.Trim());
             }
+
+            ctx.SetResult(HookResult.IGNORE); //Don't continue on with vanilla code
+#endif
         }
 
-        [Hook(HookOrder.NORMAL)]
-        void OnNetMessageSendData(ref HookContext ctx, ref HookArgs.SendNetData args)
-        {
-            ctx.SetResult(HookResult.IGNORE);
-            NewNetMessage.SendData(args.MsgType, args.RemoteClient, args.IgnoreClient, args.Text, args.Number,
-                args.Number2, args.Number3, args.Number4, args.Number5);
-        }
+        //[Hook(HookOrder.NORMAL)]
+        //void OnNetMessageSendData(ref HookContext ctx, ref HookArgs.SendNetData args)
+        //{
+        //    ctx.SetResult(HookResult.IGNORE);
+        //    NewNetMessage.SendData(args.MsgType, args.RemoteClient, args.IgnoreClient, args.Text, args.Number,
+        //        args.Number2, args.Number3, args.Number4, args.Number5);
+        //}
 
         private int lastWritten = 0;
         //[Hook(HookOrder.NORMAL)]
@@ -812,6 +1005,16 @@ namespace tdsm.core
                 }
             }
             Terraria.Main.oldStatusText = statusText;
+        }
+
+        public void PerformRestart()
+        {
+#if TDSMServer
+            Server.PerformRestart();
+            RestartWhenNoPlayers = false;
+            if (_tskWaitForPlayers != null) _tskWaitForPlayers.Enabled = false;
+            Server.AcceptNewConnections = _waitFPState.HasValue ? _waitFPState.Value : true;
+#endif
         }
     }
 }

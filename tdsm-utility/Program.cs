@@ -10,8 +10,8 @@ namespace tdsm.utility
         static void Main(string[] args)
         {
             Terraria.Main.dedServ = true;
-            DumpNPCs(377);
-            DumpItems(2748);
+            DumpNPCs(539);
+            DumpItems(3596);
         }
 
         static void DumpNPCs(int maxNPCs)
@@ -58,7 +58,7 @@ namespace tdsm.utility
             {
                 bf.Serialize(fs, new DefinitionFile<NPCInfo>()
                 {
-                    Version = 1,
+                    Version = 2,
                     Data = writable
                 });
                 fs.Flush();
@@ -112,7 +112,7 @@ namespace tdsm.utility
             {
                 bf.Serialize(fs, new DefinitionFile<ItemInfo>()
                 {
-                    Version = 1,
+                    Version = 2,
                     Data = writable
                 });
                 fs.Flush();
@@ -138,7 +138,7 @@ namespace tdsm.utility
         public int NetId { get; set; }
         public string Name { get; set; }
 
-        public bool? Boss { get; set; }
+        public bool Boss { get; set; }
         //public SpawnTime? SpawnTime { get; set; }
         //Maybe a spawn biome? (to test)
     }

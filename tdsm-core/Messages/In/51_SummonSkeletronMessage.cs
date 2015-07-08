@@ -19,9 +19,9 @@ namespace tdsm.core.Messages.In
             int playerId = ReadByte(readBuffer);
             byte action = ReadByte(readBuffer);
 
-            if (playerId != whoAmI)
+			if (playerId != whoAmI && Entry.EnableCheatProtection)
             {
-                tdsm.api.Callbacks.NetplayCallback.slots[whoAmI].Kick("SummonSkeletron Player Forgery.");
+                Terraria.Netplay.Clients[whoAmI].Kick("SummonSkeletron Player Forgery.");
                 return;
             }
 

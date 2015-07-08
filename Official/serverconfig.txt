@@ -15,7 +15,7 @@
 #-secure					Adds addition cheat protection to the server.
 #-noupnp					Disables automatic port forwarding
 
-#Set’s the max number of players allowed on a server.  Value must be between 1 and 255
+#Setâ€™s the max number of players allowed on a server.  Value must be between 1 and 255
 maxplayers=8
 
 #Load a world and automatically start the server.
@@ -28,7 +28,7 @@ maxplayers=8
 #password=p@55w0rd
 
 #Set the message of the day
-#motd=Please don’t cut the purple trees!
+#motd=Please donâ€™t cut the purple trees!
 
 #Sets the folder where world files will be stored
 #worldpath=C:\Users\Defaults\My Documents\My Games\Terraria\Worlds\
@@ -63,10 +63,10 @@ priority=1
 usewhitelist=false
 
 #true to enforce the core to only run as a vanilla server under linux
-vanilla-linux=false
+vanilla-server=false
 
 #Allows communication to the TDSM server
-heartbeat=true
+#heartbeat=true
 
 #true to show on the server list, heartbeat must be enabled.
 #server-list=true
@@ -107,3 +107,14 @@ overlimit-slots=1
 
 #Location of a pid file to maintain.
 #pid-file=process.pid
+
+#If you are having issues with being kicked with forgery messages and you wish to disable TDSM's cheat detection
+#this will allow you to do so. (This is seperate from the official server's "secure" config property)
+#Enabled by default
+#cheat-detection=true
+
+server-side-characters=true
+
+#DEVELOPER config. This section is to disable TDSM starting it's own custom server implementation.
+#Set to false to use Re-Logic server code
+tdsm-server-core=true

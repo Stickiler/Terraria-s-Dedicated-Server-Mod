@@ -1,55 +1,282 @@
 ﻿using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.IO;
 using System.Threading;
 using tdsm.api.Plugin;
-
-
-
-#if Full_API
-
-#endif
+using System.Net.Sockets;
+using Terraria.Net.Sockets;
+using Terraria.Net;
+using System.Net;
 
 namespace tdsm.api.Callbacks
 {
-    public abstract class IAPISocket
-    {
-        public int whoAmI;
-        public string statusText2;
-        public int statusCount;
-        public int statusMax;
-        public volatile string remoteAddress;
-        public bool[,] tileSection;
-        public string statusText = String.Empty;
-        public bool announced;
-        public string name = "Anonymous";
-        public string oldName = String.Empty;
-        public float spamProjectile;
-        public float spamAddBlock;
-        public float spamDelBlock;
-        public float spamWater;
-        public float spamProjectileMax = 100f;
-        public float spamAddBlockMax = 100f;
-        public float spamDelBlockMax = 500f;
-        public float spamWaterMax = 50f;
+    //    public abstract class IAPISocket : Terraria.ServerSock
+    //    {
+    ////        public int Id;
+    ////        public string statusText2;
+    ////        public int statusCount;
+    ////        public int statusMax;
+    //        public volatile string remoteAddress;
+    ////        public bool[,] tileSection;
+    ////        public string statusText = String.Empty;
+    ////        public bool announced;
+    ////        public string name = "Anonymous";
+    ////        public string oldName = String.Empty;
+    ////        public float spamProjectile;
+    ////        public float spamAddBlock;
+    ////        public float spamDelBlock;
+    ////        public float spamWater;
+    ////        public float spamProjectileMax = 100f;
+    ////        public float spamAddBlockMax = 100f;
+    ////        public float spamDelBlockMax = 500f;
+    ////        public float spamWaterMax = 50f;
+    //
+    ////        public int state;
+    //
+    ////        //TDSM core doesn't use these - only here for vanilla
+    ////        public System.Net.Sockets.TcpClient tcpClient;
+    ////        public System.Net.Sockets.NetworkStream networkStream;
+    ////        public byte[] readBuffer;
+    ////        public bool kill;
+    ////        public bool active;
+    ////        public bool locked;
+    ////        public int timeOut;
+    ////        public byte[] writeBuffer;
+    //
+    //        public virtual bool IsPlaying()
+    //        {
+    //            return state == 10;
+    //        }
+    //        public virtual bool CanSendWater()
+    //        {
+    //            //return state >= 3;
+    //            return (Terraria.NetMessage.buffer[Id].broadcast || state >= 3) && tcpClient.Connected;
+    //        }
+    //        public virtual string RemoteAddress()
+    //        {
+    //            return tcpClient.Client.RemoteEndPoint.ToString();
+    //        }
+    //
+    //        //Vanilla fallback
+    ////        public virtual void ServerReadCallBack(IAsyncResult ar) { }
+    ////        public virtual void ServerWriteCallBack(IAsyncResult ar) { }
+    //
+    ////        public abstract void SpamUpdate();
+    ////        public abstract void SpamClear();
+    ////        public abstract void Reset();
+    ////        public abstract bool SectionRange(int size, int firstX, int firstY);
+    //
+    //
+    //        //public virtual void Debug()
+    //        //{
+    //        //    Console.WriteLine("API Socket DEBUG");
+    //        //}
+    //    }
 
-        public abstract bool IsPlaying();
-        public abstract bool CanSendWater();
-        public abstract string RemoteAddress();
+
+    public class TemporarySynchSock : ISocket /* Whoever done this, I love you. */
+    {
+
+        //
+        // Fields
+        //
+        private TcpClient _connection;
+
+        private TcpListener _listener;
+
+        private SocketConnectionAccepted _listenerCallback;
+
+        private RemoteAddress _remoteAddress;
+
+        private bool _isListening;
+
+        //
+        // Constructors
+        //
+        public TemporarySynchSock(TcpClient tcpClient)
+        {
+            this._connection = tcpClient;
+            this._connection.NoDelay = true;
+            IPEndPoint iPEndPoint = (IPEndPoint)tcpClient.Client.RemoteEndPoint;
+            this._remoteAddress = new TcpAddress(iPEndPoint.Address, iPEndPoint.Port);
+        }
+
+        public TemporarySynchSock()
+        {
+//            this._connection = new TcpClient ();
+//            this._connection.NoDelay = true;
+        }
+
+        private void CheckSocket()
+        {
+            if (this._connection == null)
+            {
+                this._connection = new TcpClient();
+                this._connection.NoDelay = true;
+            }
+        }
+
+        //
+        // Methods
+        //
+        void ISocket.AsyncReceive(byte[] data, int offset, int size, SocketReceiveCallback callback, object state)
+        {
+            try
+            {
+                if (this._connection != null && this._connection.Client.Poll(-1, SelectMode.SelectRead))
+                {
+                    if (Globals.IsMono)
+                    {
+                        int len = this._connection.GetStream().Read(data, offset, size);
+                        if (callback != null)
+                            callback(state, len);
+                    }
+                    else
+                        this._connection.GetStream().BeginRead(data, offset, size, new AsyncCallback(this.ReadCallback), new Tuple<SocketReceiveCallback, object>(callback, state));
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (Exception e)
+            {
+//                Tools.WriteLine(e);
+                throw e;
+            }
+        }
+
+        void ISocket.AsyncSend(byte[] data, int offset, int size, SocketSendCallback callback, object state)
+        {
+            try
+            {
+                if (this._connection != null && this._connection.Client.Poll(-1, SelectMode.SelectWrite))
+                {
+                    if (Globals.IsMono)
+                    {
+                        this._connection.GetStream().Write(data, offset, size);
+                        if (callback != null)
+                            callback(state);
+                    }
+                    else
+                        this._connection.GetStream().BeginWrite(data, 0, size, new AsyncCallback(this.SendCallback), new Tuple<SocketSendCallback, object>(callback, state));
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (Exception e)
+            {
+//                Tools.WriteLine(e);
+                throw e;
+            }
+        }
+
+        void ISocket.Close()
+        {
+            this._remoteAddress = null;
+            if (this._connection != null)
+            {
+                this._connection.Close();
+            }
+        }
+
+        void ISocket.Connect(RemoteAddress address)
+        {
+            CheckSocket();
+            TcpAddress tcpAddress = (TcpAddress)address;
+            this._connection.Connect(tcpAddress.Address, tcpAddress.Port);
+            this._remoteAddress = address;
+        }
+
+        RemoteAddress ISocket.GetRemoteAddress()
+        {
+            return this._remoteAddress;
+        }
+
+        bool ISocket.IsConnected()
+        {
+            return this._connection != null && this._connection.Client != null && this._connection.Connected;
+        }
+
+        bool ISocket.IsDataAvailable()
+        {
+            return this._connection.GetStream().DataAvailable;
+        }
+
+        private void ListenLoop(object unused)
+        {
+            while (this._isListening && !Terraria.Netplay.disconnect)
+            {
+                try
+                {
+                    ISocket socket = new TemporarySynchSock(this._listener.AcceptTcpClient());
+                    Tools.WriteLine(socket.GetRemoteAddress() + " is connecting...");
+                    this._listenerCallback(socket);
+                }
+                catch (Exception)
+                {
+                }
+            }
+            this._listener.Stop();
+        }
+
+        private void ReadCallback(IAsyncResult result)
+        {
+            Tuple<SocketReceiveCallback, object> tuple = (Tuple<SocketReceiveCallback, object>)result.AsyncState;
+            tuple.Item1(tuple.Item2, this._connection.GetStream().EndRead(result));
+        }
+
+        private void SendCallback(IAsyncResult result)
+        {
+            Tuple<SocketSendCallback, object> tuple = (Tuple<SocketSendCallback, object>)result.AsyncState;
+            try
+            {
+                this._connection.GetStream().EndWrite(result);
+                tuple.Item1(tuple.Item2);
+            }
+            catch (Exception)
+            {
+                ((ISocket)this).Close();
+            }
+        }
+
+        bool ISocket.StartListening(SocketConnectionAccepted callback)
+        {
+            this._isListening = true;
+            this._listenerCallback = callback;
+            if (this._listener == null)
+            {
+                this._listener = new TcpListener(IPAddress.Any, Terraria.Netplay.ListenPort);
+            }
+            try
+            {
+                this._listener.Start();
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+            ThreadPool.QueueUserWorkItem(new WaitCallback(this.ListenLoop));
+            return true;
+        }
+
+        void ISocket.StopListening()
+        {
+            this._isListening = false;
+        }
     }
 
     public static class NetplayCallback
     {
-        public static IAPISocket[] slots;// = new IAPISocket[256];
-#if Full_API
-        public static Action<Int32, Vector2> CheckSectionMethod = Terraria.ServerSock.CheckSection;
-#endif
+        //        public static Terraria.ServerSock[] slots;// = new IAPISocket[256];
+        #if Full_API
+        public static Action<Int32, Vector2, Int32> CheckSectionMethod = Terraria.RemoteClient.CheckSection;
+        #endif
 
-        public static void CheckSection(int slot, Vector2 position)
+        public static void CheckSection(int slot, Vector2 position, int fluff = 1)
         {
 #if Full_API
-            CheckSectionMethod(slot, position);
+            CheckSectionMethod(slot, position, fluff);
 #endif
         }
 
@@ -72,161 +299,6 @@ namespace tdsm.api.Callbacks
 #endif
         }
 
-        public static void SendAnglerQuest()
-        {
-#if Full_API
-            if (slots != null)
-                for (int i = 0; i < 255; i++)
-                {
-                    if (slots[i].IsPlaying())
-                    {
-                        NetMessageCallback.SendData(74, i, -1, Terraria.Main.player[i].name, Terraria.Main.anglerQuest, 0f, 0f, 0f, 0);
-                    }
-                }
-#endif
-        }
-
-        public static void sendWater(int x, int y)
-        {
-#if Full_API
-            if (slots != null)
-                for (int i = 0; i < 256; i++)
-                {
-                    //if ((/*NetMessage.buffer[i].broadcast ||*/ Server.slots[i].state >= SlotState.SENDING_TILES) && Server.slots[i].Connected)
-                    if (slots[i].CanSendWater())
-                    {
-                        int num = x / 200;
-                        int num2 = y / 150;
-                        if (slots[i].tileSection[num, num2])
-                        {
-                            NetMessageCallback.SendData(48, i, -1, "", x, (float)y, 0f, 0f, 0);
-                        }
-                    }
-                }
-#endif
-        }
-
-        public static void syncPlayers()
-        {
-#if Full_API
-            bool flag = false;
-            if (slots != null)
-                for (int i = 0; i < 255; i++)
-                {
-                    int num = 0;
-                    if (Terraria.Main.player[i].active)
-                    {
-                        num = 1;
-                    }
-                    if (slots[i].IsPlaying())
-                    {
-                        if (Terraria.Main.autoShutdown && !flag)
-                        {
-                            string text = slots[i].RemoteAddress();
-                            string a = text;
-                            for (int j = 0; j < text.Length; j++)
-                            {
-                                if (text.Substring(j, 1) == ":")
-                                {
-                                    a = text.Substring(0, j);
-                                }
-                            }
-                            if (a == "127.0.0.1")
-                            {
-                                flag = true;
-                            }
-                        }
-                        NetMessageCallback.SendData(14, -1, i, "", i, (float)num, 0f, 0f, 0);
-                        NetMessageCallback.SendData(4, -1, i, Terraria.Main.player[i].name, i, 0f, 0f, 0f, 0);
-                        NetMessageCallback.SendData(13, -1, i, "", i, 0f, 0f, 0f, 0);
-                        NetMessageCallback.SendData(16, -1, i, "", i, 0f, 0f, 0f, 0);
-                        NetMessageCallback.SendData(30, -1, i, "", i, 0f, 0f, 0f, 0);
-                        NetMessageCallback.SendData(45, -1, i, "", i, 0f, 0f, 0f, 0);
-                        NetMessageCallback.SendData(42, -1, i, "", i, 0f, 0f, 0f, 0);
-                        NetMessageCallback.SendData(50, -1, i, "", i, 0f, 0f, 0f, 0);
-                        for (int k = 0; k < 59; k++)
-                        {
-                            NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].inventory[k].name, i, (float)k, (float)Terraria.Main.player[i].inventory[k].prefix, 0f, 0);
-                        }
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].armor[0].name, i, 59f, (float)Terraria.Main.player[i].armor[0].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].armor[1].name, i, 60f, (float)Terraria.Main.player[i].armor[1].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].armor[2].name, i, 61f, (float)Terraria.Main.player[i].armor[2].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].armor[3].name, i, 62f, (float)Terraria.Main.player[i].armor[3].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].armor[4].name, i, 63f, (float)Terraria.Main.player[i].armor[4].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].armor[5].name, i, 64f, (float)Terraria.Main.player[i].armor[5].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].armor[6].name, i, 65f, (float)Terraria.Main.player[i].armor[6].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].armor[7].name, i, 66f, (float)Terraria.Main.player[i].armor[7].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].armor[8].name, i, 67f, (float)Terraria.Main.player[i].armor[8].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].armor[9].name, i, 68f, (float)Terraria.Main.player[i].armor[9].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].armor[10].name, i, 69f, (float)Terraria.Main.player[i].armor[10].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].armor[11].name, i, 70f, (float)Terraria.Main.player[i].armor[11].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].armor[12].name, i, 71f, (float)Terraria.Main.player[i].armor[12].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].armor[13].name, i, 72f, (float)Terraria.Main.player[i].armor[13].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].armor[14].name, i, 73f, (float)Terraria.Main.player[i].armor[14].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].armor[15].name, i, 74f, (float)Terraria.Main.player[i].armor[15].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].dye[0].name, i, 75f, (float)Terraria.Main.player[i].dye[0].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].dye[1].name, i, 76f, (float)Terraria.Main.player[i].dye[1].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].dye[2].name, i, 77f, (float)Terraria.Main.player[i].dye[2].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].dye[3].name, i, 78f, (float)Terraria.Main.player[i].dye[3].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].dye[4].name, i, 79f, (float)Terraria.Main.player[i].dye[4].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].dye[5].name, i, 80f, (float)Terraria.Main.player[i].dye[5].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].dye[6].name, i, 81f, (float)Terraria.Main.player[i].dye[6].prefix, 0f, 0);
-                        NetMessageCallback.SendData(5, -1, i, Terraria.Main.player[i].dye[7].name, i, 82f, (float)Terraria.Main.player[i].dye[7].prefix, 0f, 0);
-                        if (!slots[i].announced)
-                        {
-                            slots[i].announced = true;
-                            NetMessageCallback.SendData(25, -1, i, Terraria.Main.player[i].name + " " + Terraria.Lang.mp[19], 255, 255f, 240f, 20f, 0);
-                            if (Terraria.Main.dedServ)
-                            {
-                                Tools.WriteLine(Terraria.Main.player[i].name + " " + Terraria.Lang.mp[19]);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        num = 0;
-                        NetMessageCallback.SendData(14, -1, i, "", i, (float)num, 0f, 0f, 0);
-                        if (slots[i].announced)
-                        {
-                            slots[i].announced = false;
-                            NetMessageCallback.SendData(25, -1, i, slots[i].oldName + " " + Terraria.Lang.mp[20], 255, 255f, 240f, 20f, 0);
-                            if (Terraria.Main.dedServ)
-                            {
-                                Tools.WriteLine(slots[i].oldName + " " + Terraria.Lang.mp[20]);
-                            }
-                        }
-                    }
-                }
-            bool flag2 = false;
-            for (int l = 0; l < 200; l++)
-            {
-                if (Terraria.Main.npc[l].active && Terraria.Main.npc[l].townNPC && Terraria.NPC.TypeToNum(Terraria.Main.npc[l].type) != -1)
-                {
-                    if (!flag2 && Terraria.Main.npc[l].type == 368)
-                    {
-                        flag2 = true;
-                    }
-                    int num2 = 0;
-                    if (Terraria.Main.npc[l].homeless)
-                    {
-                        num2 = 1;
-                    }
-                    NetMessageCallback.SendData(60, -1, -1, "", l, (float)Terraria.Main.npc[l].homeTileX, (float)Terraria.Main.npc[l].homeTileY, (float)num2, 0);
-                }
-            }
-            if (flag2)
-            {
-                Terraria.NetMessage.SendTravelShop();
-            }
-            SendAnglerQuest();
-            if (Terraria.Main.autoShutdown && !flag)
-            {
-                Terraria.WorldFile.saveWorld(false);
-                Terraria.Netplay.disconnect = true;
-            }
-#endif
-        }
-
         public static void AddBan(int plr)
         {
 #if Full_API
@@ -236,14 +308,14 @@ namespace tdsm.api.Callbacks
             };
             var args = new HookArgs.AddBan()
             {
-                RemoteAddress = slots[plr].RemoteAddress()
+                RemoteAddress = Terraria.Netplay.Clients[plr].RemoteAddress()
             };
 
             HookPoints.AddBan.Invoke(ref ctx, ref args);
 
             if (ctx.Result == HookResult.DEFAULT)
             {
-                string remote = slots[plr].RemoteAddress();
+                string remote = Terraria.Netplay.Clients[plr].RemoteAddress();
                 string ip = remote;
                 for (int i = 0; i < remote.Length; i++)
                 {
@@ -252,13 +324,48 @@ namespace tdsm.api.Callbacks
                         ip = remote.Substring(0, i);
                     }
                 }
-                using (StreamWriter streamWriter = new StreamWriter(Terraria.Netplay.banFile, true))
+                using (StreamWriter streamWriter = new StreamWriter(Terraria.Netplay.BanFilePath, true))
                 {
                     streamWriter.WriteLine("//" + Terraria.Main.player[plr].name);
                     streamWriter.WriteLine(ip);
                 }
             }
 #endif
+        }
+
+        public static void sendWater(int x, int y)
+        {
+            if (Terraria.Main.netMode == 1)
+            {
+                Terraria.NetMessage.SendData(48, -1, -1, "", x, (float)y, 0f, 0f, 0);
+                return;
+            }
+            for (int i = 0; i < 256; i++)
+            {
+                if ((Terraria.NetMessage.buffer[i] != null &&
+                    Terraria.NetMessage.buffer[i].broadcast || Terraria.Netplay.Clients[i].State >= 3) &&
+                    Terraria.Netplay.Clients[i] != null &&
+                    Terraria.Netplay.Clients[i].Socket != null && Terraria.Netplay.Clients[i].Socket.IsConnected())
+                {
+                    int num = x / 200;
+                    int num2 = y / 150;
+                    if (Terraria.Netplay.Clients[i].TileSections[num, num2])
+                    {
+                        Terraria.NetMessage.SendData(48, i, -1, "", x, (float)y, 0f, 0f, 0);
+                    }
+                }
+            }
+        }
+
+        public static int LastSlot;
+        public static void OnNewConnection(int slot)
+        {
+            LastSlot = slot;
+            //OnConnectionAccepted
+            if (Terraria.Netplay.Clients[slot].Socket is ClientConnection)
+            {
+                ((ClientConnection)Terraria.Netplay.Clients[slot].Socket).Set(slot);
+            }
         }
     }
 }

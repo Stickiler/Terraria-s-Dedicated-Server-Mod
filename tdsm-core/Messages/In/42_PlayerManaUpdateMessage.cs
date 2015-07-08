@@ -23,9 +23,9 @@ namespace tdsm.core.Messages.In
         {
             int playerIndex = (int)ReadByte(readBuffer);
 
-            if (playerIndex != whoAmI)
+			if (playerIndex != whoAmI && Entry.EnableCheatProtection)
             {
-                tdsm.api.Callbacks.NetplayCallback.slots[whoAmI].Kick("Cheating detected (PLAYER_MANA_UPDATE forgery).");
+                Terraria.Netplay.Clients[whoAmI].Kick("Cheating detected (PLAYER_MANA_UPDATE forgery).");
                 return;
             }
 

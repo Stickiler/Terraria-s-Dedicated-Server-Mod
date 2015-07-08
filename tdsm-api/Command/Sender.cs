@@ -7,7 +7,7 @@ namespace tdsm.api.Command
     /// <summary>
     /// Sender class for command sending/parsing
     /// </summary>
-    public abstract class Sender : ISender
+    public abstract class Sender : Terraria.Entity, ISender
     {
         /// <summary>
         /// Get/set method for Sender's Op status
@@ -34,7 +34,7 @@ namespace tdsm.api.Command
         /// <param name="R">Red text color value</param>
         /// <param name="G">Green text color value</param>
         /// <param name="B">Blue text color value</param>
-        public abstract void SendMessage(string message, int sender = 255, float R = 255f, float G = 0f, float B = 0f);
+        public abstract void SendMessage(string message, int sender = 255, byte R = 255, byte G = 255, byte B = 255);
 
         //public bool Is(Type type)
         //{

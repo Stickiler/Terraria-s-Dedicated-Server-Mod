@@ -16,13 +16,14 @@ namespace tdsm.api
         public const Int32 Build = 2;
         public const ReleasePhase BuildPhase = ReleasePhase.Beta;
 
-        public const Int32 TerrariaRelease = 102;
-        public const String TerrariaVersion = "1.2.4.1";
+        public const Int32 TerrariaRelease = 146;
+        public const String TerrariaVersion = "1.3.0.3";
 
         private const String WorldDirectory = "Worlds";
         private const String PluginDirectory = "Plugins";
         private const String DataDirectory = "Data";
-        //private const String LibrariesDirectory = "Libraries";
+        private const String LibrariesDirectory = "Libraries";
+        private const String CharacterData = "Characters";
         //private const String BackupDirectory = "BackupDirectory";
 
         public static volatile bool Exit = false;
@@ -55,11 +56,11 @@ namespace tdsm.api
             { return Path.Combine(SavePath, PluginDirectory); }
         }
 
-        //public static string LibrariesPath
-        //{
-        //    get
-        //    { return Path.Combine(SavePath, PluginDirectory, LibrariesDirectory); }
-        //}
+        public static string LibrariesPath
+        {
+            get
+            { return Path.Combine(SavePath, LibrariesDirectory); }
+        }
 
         public static string DataPath
         {
@@ -67,14 +68,23 @@ namespace tdsm.api
             { return Path.Combine(SavePath, DataDirectory); }
         }
 
+        public static string CharacterDataPath
+        {
+            get
+            { return Path.Combine(SavePath, DataDirectory, CharacterData); }
+        }
+
+        public static readonly bool IsMono = Type.GetType("Mono.Runtime") != null;
+
         public static void Touch()
         {
             if (!Directory.Exists(SavePath)) Directory.CreateDirectory(SavePath);
             if (!Directory.Exists(WorldPath)) Directory.CreateDirectory(WorldPath);
             //if (!Directory.Exists(WorldBackupPath)) Directory.CreateDirectory(WorldBackupPath);
             if (!Directory.Exists(PluginPath)) Directory.CreateDirectory(PluginPath);
-            //if (!Directory.Exists(LibrariesPath)) Directory.CreateDirectory(LibrariesPath);
+            if (!Directory.Exists(LibrariesPath)) Directory.CreateDirectory(LibrariesPath);
             if (!Directory.Exists(DataPath)) Directory.CreateDirectory(DataPath);
+            if (!Directory.Exists(CharacterDataPath)) Directory.CreateDirectory(CharacterDataPath);
         }
 
         /// <summary>

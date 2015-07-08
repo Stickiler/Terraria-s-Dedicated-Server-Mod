@@ -3,16 +3,16 @@ using System.Collections.Generic;
 
 namespace tdsm.api.Misc
 {
-    public struct Task
+    public class Task /* Needed this to be a reference type */
     {
-        public static readonly Task Empty;
+        //public static readonly Task Empty;
 
         private DateTime _insertedAt;
         private bool _enabled;
 
         public object Data;
 
-        public bool Triggered
+        public bool Triggerable
         {
             get
             {
@@ -31,7 +31,7 @@ namespace tdsm.api.Misc
             {
                 _enabled = value;
 
-                if (_enabled) Reset();
+                if (_enabled) Reset(false);
             }
         }
 
@@ -44,6 +44,14 @@ namespace tdsm.api.Misc
         public int Trigger { get; set; }
 
         /// <summary>
+        /// Informs if the tack has been performed at leat once
+        /// </summary>
+        /// <value>
+        /// The trigger.
+        /// </value>
+        public bool HasTriggered { get; private set; }
+
+        /// <summary>
         /// Gets or sets the method to be called.
         /// </summary>
         /// <value>
@@ -51,28 +59,35 @@ namespace tdsm.api.Misc
         /// </value>
         public Action<Task> Method { get; set; }
 
-        public void Reset(bool clearData = true)
+        public void Reset(bool triggered = true, bool clearData = true)
         {
             _insertedAt = DateTime.Now;
 
             if (clearData) Data = null;
+            HasTriggered = triggered;
+        }
+
+        public void SetImmediate()
+        {
+            _insertedAt = DateTime.Now.AddSeconds(-Trigger);
         }
 
         public Task Init()
         {
-            Reset();
+            Reset(false);
             return this;
         }
 
-        public bool IsEmpty()
-        {
-            return this.Trigger == Empty.Trigger && this.Method == Empty.Method;
-        }
+        //public bool IsEmpty()
+        //{
+        //    return this.Trigger == Empty.Trigger && this.Method == Empty.Method;
+        //}
     }
 
     public static class Tasks
     {
         static Stack<Task> _tasks;
+        static DateTime _lastCheck;
 
         static Tasks()
         {
@@ -87,23 +102,29 @@ namespace tdsm.api.Misc
 
         internal static void CheckTasks()
         {
-            lock (_tasks)
+            const Int32 CheckIntervalMs = 200;
+
+            if ((DateTime.Now - _lastCheck).TotalMilliseconds >= CheckIntervalMs)
             {
-                for (var i = 0; i < _tasks.Count; i++)
+                _lastCheck = DateTime.Now;
+                lock (_tasks)
                 {
-                    Task task = _tasks.Pop();
-                    if (task.Triggered)
+                    for (var i = 0; i < _tasks.Count; i++)
                     {
-                        task.Method.BeginInvoke
-                        (task,
-                            (IAsyncResult res) =>
-                            {
-                                task.Method.EndInvoke(res);
-                            }, null
-                        );
-                        task.Reset();
+                        Task task = _tasks.Pop();
+                        if (task.Triggerable)
+                        {
+                            task.Method.BeginInvoke
+                            (task,
+                                (IAsyncResult res) =>
+                                {
+                                    task.Method.EndInvoke(res);
+                                }, null
+                            );
+                            task.Reset();
+                        }
+                        _tasks.Push(task);
                     }
-                    _tasks.Push(task);
                 }
             }
         }

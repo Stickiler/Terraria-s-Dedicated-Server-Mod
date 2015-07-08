@@ -5,9 +5,8 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using tdsm.api.Command;
-using tdsm.api.Plugin;
 
-namespace tdsm.api
+namespace tdsm.api.Plugin
 {
     /// <summary>
     /// Plugin class, used as base for plugin extensions
@@ -47,7 +46,7 @@ namespace tdsm.api
         internal DateTime PathTimestamp { get; set; }
 
         internal Assembly Assembly { get; set; }
-        internal AppDomain _domain;
+        //internal AppDomain _domain;
 
         /// <summary>
         /// Whether this plugin is enabled or not

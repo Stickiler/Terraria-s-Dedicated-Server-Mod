@@ -10,31 +10,47 @@ namespace tdsm.api
 {
     public static class Tools
     {
-        private static Action<String, Object[]> _WriteLineMethod = Console.WriteLine;
+        private static Action<String, ConsoleColor, Object[]> _WriteLineMethod;
         internal static Action WriteClose;
 
         public static void WriteLine(string fmt, params object[] args)
         {
-            lock (_WriteLineMethod)
-                _WriteLineMethod(fmt, args);
+            WriteLine(fmt, ConsoleColor.White, args);
+        }
+
+        public static void WriteLine(string fmt, ConsoleColor colour = ConsoleColor.White, params object[] args)
+        {
+            if (_WriteLineMethod != null)
+                lock (_WriteLineMethod)
+                    _WriteLineMethod(fmt, colour, args);
+            else
+            {
+                if (Console.ForegroundColor != colour) Console.ForegroundColor = colour;
+                Console.WriteLine(fmt, args);
+            }
         }
 
         public static void WriteLine(string fmt)
         {
-            lock (_WriteLineMethod)
-                _WriteLineMethod(fmt, null);
+            WriteLine(fmt, null);
+        }
+
+        public static void WriteLine(object arg)
+        {
+            WriteLine("{0}", arg);
         }
 
         public static void WriteLine(Exception e)
         {
-            lock (_WriteLineMethod)
-                _WriteLineMethod(String.Format("{0}", e), null);
+            WriteLine("{0}", e);
         }
 
-        public static void SetWriteLineMethod(Action<String, Object[]> writeMethod, Action closeMethod = null)
+        public static void SetWriteLineMethod(Action<String, ConsoleColor, Object[]> writeMethod, Action closeMethod = null)
         {
-            lock (_WriteLineMethod)
-                _WriteLineMethod = writeMethod;
+            if (_WriteLineMethod == null) _WriteLineMethod = writeMethod;
+            else
+                lock (_WriteLineMethod)
+                    _WriteLineMethod = writeMethod;
 
             if (closeMethod != null) SetWriteLineCloseMethod(closeMethod);
         }
@@ -53,7 +69,7 @@ namespace tdsm.api
             foreach (var player in Main.player)
             {
                 if (player.active)
-                    NetMessage.SendData((int)Packet.PLAYER_CHAT, player.whoAmi, -1, message, 255 /* PlayerId */, color.R, color.G, color.B);
+                    NetMessage.SendData((int)Packet.PLAYER_CHAT, player.whoAmI, -1, message, 255 /* PlayerId */, color.R, color.G, color.B);
             }
 
             if (writeToConsole) Tools.WriteLine(message);
@@ -66,7 +82,7 @@ namespace tdsm.api
             foreach (var player in Main.player)
             {
                 if (player.active && player.Op)
-                    NetMessage.SendData((int)Packet.PLAYER_CHAT, player.whoAmi, -1, message, 255 /* PlayerId */, 176f, 196, 222f);
+                    NetMessage.SendData((int)Packet.PLAYER_CHAT, player.whoAmI, -1, message, 255 /* PlayerId */, 176f, 196, 222f);
             }
 
             if (writeToConsole) Tools.WriteLine(message);
@@ -406,6 +422,22 @@ namespace tdsm.api
                 return Main.item
                   .Where(x => x != null && x.active)
                   .Count();
+            }
+        }
+
+        public static int ActivePlayerCount
+        {
+            get
+            {
+                return (from p in Terraria.Main.player where p.active select p.Name).Count();
+            }
+        }
+
+        public static int MaxPlayers
+        {
+            get
+            {
+                return Main.maxNetPlayers;
             }
         }
 #endif

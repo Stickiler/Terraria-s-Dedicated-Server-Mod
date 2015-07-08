@@ -42,27 +42,45 @@ namespace tdsm.core.ServerCore
 
     public static class IAPISocketExtensions
     {
-        public static void Kick(this tdsm.api.Callbacks.IAPISocket sock, string reason)
+        public static void Kick(this Terraria.RemoteClient sock, string reason)
         {
             (sock as ServerSlot).Kick(reason);
         }
 
-        public static SlotState State(this tdsm.api.Callbacks.IAPISocket sock)
+        public static SlotState State(this Terraria.RemoteClient sock)
         {
             return (sock as ServerSlot).state;
         }
 
-        public static void SetState(this tdsm.api.Callbacks.IAPISocket sock, SlotState state)
+        public static void SetState(this Terraria.RemoteClient sock, SlotState state)
         {
             (sock as ServerSlot).state = state;
         }
+
+        public static bool IsPlaying(this Terraria.RemoteClient sock)
+        {
+            return (sock as ServerSlot).state == SlotState.PLAYING;
+        }
+
+        public static bool CanSendWater(this Terraria.RemoteClient sock)
+        {
+            return (sock as ServerSlot).state >= SlotState.SENDING_TILES && (sock as ServerSlot).Connected;
+        }
+
+        public static string RemoteAddress(this Terraria.RemoteClient sock)
+        {
+            return (sock as ServerSlot).remoteAddress;
+        }
     }
 
-    public class ServerSlot : tdsm.api.Callbacks.IAPISocket
+    public class ServerSlot : Terraria.RemoteClient
     {
         public volatile ClientConnection conn;
 
-        public SlotState state
+        //The base.state will always be zero.
+        //Luckily how the sockets works this ServerSlot class is only ever used by the core.
+        //The core will never use base.state
+        public new SlotState state
         {
             get { return conn == null ? SlotState.VACANT : conn.State; }
             set
@@ -78,7 +96,7 @@ namespace tdsm.core.ServerCore
         //public string statusText2;
         //public int statusCount;
         //public int statusMax;
-        //public volatile string remoteAddress;
+        public volatile string remoteAddress;
         //public bool[,] tileSection;
         //public string statusText = String.Empty;
         //public bool announced;
@@ -117,91 +135,114 @@ namespace tdsm.core.ServerCore
             state = SlotState.VACANT;
         }
 
-        public void SpamUpdate()
+        public new void SpamUpdate()
         {
             if (!Netplay.spamCheck)
             {
-                this.spamProjectile = 0f;
-                this.spamDelBlock = 0f;
-                this.spamAddBlock = 0f;
-                this.spamWater = 0f;
+                this.SpamProjectile = 0f;
+                this.SpamDeleteBlock = 0f;
+                this.SpamAddBlock = 0f;
+                this.SpamWater = 0f;
                 return;
             }
-            if (this.spamProjectile > this.spamProjectileMax)
+            if (this.SpamProjectile > this.SpamProjectileMax && Entry.EnableCheatProtection)
             {
-                NewNetMessage.BootPlayer(this.whoAmI, "Cheating attempt detected: Projectile spam");
+                NewNetMessage.BootPlayer(this.Id, "Cheating attempt detected: Projectile spam");
             }
-            if (this.spamAddBlock > this.spamAddBlockMax)
+            if (this.SpamAddBlock > this.SpamAddBlockMax && Entry.EnableCheatProtection)
             {
-                NewNetMessage.BootPlayer(this.whoAmI, "Cheating attempt detected: Add tile spam");
+                NewNetMessage.BootPlayer(this.Id, "Cheating attempt detected: Add tile spam");
             }
-            if (this.spamDelBlock > this.spamDelBlockMax)
+            if (this.SpamDeleteBlock > this.SpamDeleteBlockMax && Entry.EnableCheatProtection)
             {
-                NewNetMessage.BootPlayer(this.whoAmI, "Cheating attempt detected: Remove tile spam");
+                NewNetMessage.BootPlayer(this.Id, "Cheating attempt detected: Remove tile spam");
             }
-            if (this.spamWater > this.spamWaterMax)
+            if (this.SpamWater > this.SpamWaterMax && Entry.EnableCheatProtection)
             {
-                NewNetMessage.BootPlayer(this.whoAmI, "Cheating attempt detected: Liquid spam");
+                NewNetMessage.BootPlayer(this.Id, "Cheating attempt detected: Liquid spam");
             }
-            this.spamProjectile -= 0.4f;
-            if (this.spamProjectile < 0f)
+            this.SpamProjectile -= 0.4f;
+            if (this.SpamProjectile < 0f)
             {
-                this.spamProjectile = 0f;
+                this.SpamProjectile = 0f;
             }
-            this.spamAddBlock -= 0.3f;
-            if (this.spamAddBlock < 0f)
+            this.SpamAddBlock -= 0.3f;
+            if (this.SpamAddBlock < 0f)
             {
-                this.spamAddBlock = 0f;
+                this.SpamAddBlock = 0f;
             }
-            this.spamDelBlock -= 5f;
-            if (this.spamDelBlock < 0f)
+            this.SpamDeleteBlock -= 5f;
+            if (this.SpamDeleteBlock < 0f)
             {
-                this.spamDelBlock = 0f;
+                this.SpamDeleteBlock = 0f;
             }
-            this.spamWater -= 0.2f;
-            if (this.spamWater < 0f)
+            this.SpamWater -= 0.2f;
+            if (this.SpamWater < 0f)
             {
-                this.spamWater = 0f;
+                this.SpamWater = 0f;
             }
         }
 
-        public void SpamClear()
+        public new bool SectionRange(int size, int firstX, int firstY)
         {
-            this.spamProjectile = 0f;
-            this.spamAddBlock = 0f;
-            this.spamDelBlock = 0f;
-            this.spamWater = 0f;
+            for (var i = 0; i < 4; i++)
+            {
+                var x = firstX;
+                var y = firstY;
+                if (i == 1) x += size;
+
+                if (i == 2) y += size;
+                if (i == 3)
+                {
+                    x += size;
+                    y += size;
+                }
+
+                var sectionX = Netplay.GetSectionX(x);
+                var sectionY = Netplay.GetSectionY(y);
+                if (this.TileSections[sectionX, sectionY])
+                    return true;
+            }
+            return false;
         }
 
-        public void Reset()
+        public new void SpamClear()
         {
-            if (tileSection != null && tileSection.GetLength(0) >= Main.maxSectionsX && tileSection.GetLength(1) >= Main.maxSectionsY)
+            this.SpamProjectile = 0f;
+            this.SpamAddBlock = 0f;
+            this.SpamDeleteBlock = 0f;
+            this.SpamWater = 0f;
+        }
+
+        public new void Reset()
+        {
+            if (TileSections != null && TileSections.GetLength(0) >= Main.maxSectionsX && TileSections.GetLength(1) >= Main.maxSectionsY)
             {
-                Array.Clear(tileSection, 0, tileSection.GetLength(0) * tileSection.GetLength(1));
+                Array.Clear(TileSections, 0, TileSections.GetLength(0) * TileSections.GetLength(1));
             }
             else
             {
-                tileSection = new bool[Main.maxSectionsX, Main.maxSectionsY];
+                TileSections = new bool[Main.maxSectionsX, Main.maxSectionsY];
             }
 
-            var oldPlayer = Main.player[this.whoAmI];
+            var oldPlayer = Main.player[this.Id];
             if (oldPlayer != null && state != SlotState.VACANT)
             {
-                NewNetMessage.OnPlayerLeft(oldPlayer, this, announced);
+                NewNetMessage.OnPlayerLeft(oldPlayer, this, IsAnnouncementCompleted);
             }
-            announced = false;
+            IsAnnouncementCompleted = false;
             this.remoteAddress = "<unknown>";
 
-            if (this.whoAmI < 255)
+            if (this.Id < 255)
             {
-                Main.player[this.whoAmI] = new Player();
+                Main.player[this.Id] = new Player();
             }
 
-            this.statusCount = 0;
-            this.statusMax = 0;
-            this.statusText2 = String.Empty;
-            this.statusText = String.Empty;
-            this.name = "Anonymous";
+            this.StatusCount = 0;
+            this.StatusMax = 0;
+            this.StatusText2 = String.Empty;
+            this.StatusText = String.Empty;
+            this.Name = "Anonymous";
             this.conn = null;
 
             this.SpamClear();
@@ -240,19 +281,19 @@ namespace tdsm.core.ServerCore
             conn.CopyAndSend(new ArraySegment<byte>(data, offset, length));
         }
 
-        public override bool IsPlaying()
-        {
-            return state == SlotState.PLAYING;
-        }
-
-        public override bool CanSendWater()
-        {
-            return state >= SlotState.SENDING_TILES && Connected;
-        }
-
-        public override string RemoteAddress()
-        {
-            return conn.RemoteAddress;
-        }
+//        public override bool IsPlaying()
+//        {
+//            return state == SlotState.PLAYING;
+//        }
+//
+//        public override bool CanSendWater()
+//        {
+//            return state >= SlotState.SENDING_TILES && Connected;
+//        }
+//
+//        public override string RemoteAddress()
+//        {
+//            return conn.RemoteAddress;
+//        }
     }
 }

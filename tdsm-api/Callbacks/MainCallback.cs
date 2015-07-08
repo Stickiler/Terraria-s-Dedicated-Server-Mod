@@ -9,9 +9,15 @@ namespace tdsm.api.Callbacks
         public static Action StatusTextChange;
         public static Action UpdateServer;
 
+        //public static bool StartEclipse;
+        //public static bool StartBloodMoon;
+
         public static void ProgramStart()
         {
+            Console.ForegroundColor = ConsoleColor.Yellow;
             Tools.WriteLine("TDSM Rebind API build {0}{1}", Globals.Build, Globals.PhaseToSuffix(Globals.BuildPhase));
+            Console.ForegroundColor = Command.ConsoleSender.DefaultColour;
+
             Globals.Touch();
             ID.Lookup.Initialise();
 
@@ -149,7 +155,7 @@ namespace tdsm.api.Callbacks
             if (Tools.WriteClose != null) Tools.WriteClose.Invoke();
         }
 
-        public static void Initialise()
+        public static bool Initialise()
         {
 #if Full_API
             if (Terraria.Main.dedServ)
@@ -163,18 +169,34 @@ namespace tdsm.api.Callbacks
                     ServerChangeState = ServerState.Initialising
                 };
                 HookPoints.ServerStateChange.Invoke(ref ctx, ref args);
+
+                return ctx.Result != HookResult.IGNORE;
             }
 #endif
+
+            return true; //Allow continue
         }
 
         public static void UpdateServerEnd()
         {
-            /* Check tolled tasks */
-            Tasks.CheckTasks();
+            ///* Check tolled tasks */
+            //Tasks.CheckTasks();
 
             if (UpdateServer != null)
                 UpdateServer();
 
+
+            for (var i = 0; i < Terraria.Netplay.Clients.Length; i++)
+            {
+                var client = Terraria.Netplay.Clients[i];
+//                if (player.active)
+                if(client != null && client.Socket != null && client.Socket is ClientConnection)
+                {
+                    var conn = (client.Socket as ClientConnection);
+                    if (conn != null)
+                        conn.Flush();
+                }
+            }
             //var ctx = new HookContext()
             //{
             //    Sender = HookContext.ConsoleSender
@@ -258,6 +280,9 @@ namespace tdsm.api.Callbacks
         //private static int _textTimeout = 0;
         public static void OnStatusTextChange()
         {
+            /* Check tolled tasks - OnStatusTextChanged is called without clients connected */
+            Tasks.CheckTasks();
+
 #if Full_API
             if (Terraria.Main.oldStatusText != Terraria.Main.statusText)
             {

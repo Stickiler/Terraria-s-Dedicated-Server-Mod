@@ -8,9 +8,8 @@ using System.Text;
 using tdsm.api;
 using tdsm.api.Command;
 using tdsm.api.Misc;
-using tdsm.core.Logging;
+using tdsm.api.Logging;
 using tdsm.core.Misc;
-using tdsm.core.ServerCore;
 using Terraria;
 
 namespace tdsm.core.RemoteConsole

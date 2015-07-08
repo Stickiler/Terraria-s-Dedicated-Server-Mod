@@ -1,6 +1,7 @@
 ﻿using System;
 using tdsm.api.Command;
 using tdsm.api.Plugin;
+using tdsm.api.Misc;
 
 namespace tdsm.api.Callbacks
 {
@@ -64,7 +65,7 @@ namespace tdsm.api.Callbacks
         {
             System.Threading.Thread.CurrentThread.Name = "APC";
 
-			Tools.WriteLine("Ready for commands.");
+            Tools.WriteLine("Ready for commands.");
 #if Full_API
             while (!Terraria.Netplay.disconnect)
             {
@@ -83,12 +84,6 @@ namespace tdsm.api.Callbacks
             }
 #endif
         }
-
-        //public static readonly Tile DefaultTile = default(Tile);
-        //public static Tile GetTile()
-        //{
-        //    return DefaultTile;
-        //}
 
         //public static int X = 0;
         //public static Tile[,] Tiles;
@@ -146,8 +141,72 @@ namespace tdsm.api.Callbacks
             //            }
             //            return t;
         }
+
+        public static readonly Terraria.Tile DefaultTile = default(Terraria.Tile);
+        public static Terraria.Tile GetTile()
+        {
+            return DefaultTile;
+        }
+
+        public static bool Tile_Equality(Terraria.Tile t1, Terraria.Tile t2)
+        {
+            return t1.isTheSameAs(t2);
+        }
+
+        public static bool Tile_Inequality(Terraria.Tile t1, Terraria.Tile t2)
+        {
+            return !t1.isTheSameAs(t2);
+        }
+
+        //public static bool TileEquals2(TileData t1, TileData t2)
+        //{
+        //    for (var x = 0; x < 1; x++)
+        //    {
+        //        for (var y = 0; y < 1; y++)
+        //        {
+        //            TestAA[x, y] = new TestA();
+        //        }
+        //    }
+        //    for (var x = 0; x < 1; x++)
+        //    {
+        //        for (var y = 0; y < 1; y++)
+        //        {
+        //            TestBB[x, y] = new TestB();
+        //        }
+        //    }
+
+        //    return false;
+        //}
+
+        //class TestA {}
+        //struct TestB {}
+
+        //static TestA[,] TestAA;
+        //static TestB[,] TestBB;
     }
-    //[StructLayout(LayoutKind.Sequential, Pack = 1)]
-    //public struct TileData
-    //{ }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Pack = 1)]
+    public struct TileData
+    {
+        //public static bool operator !=(TileData t1, TileData t2)
+        //{
+
+        //    return false;
+        //}
+
+        //public static bool operator ==(TileData t1, TileData t2)
+        //{
+        //    return UserInput.TileEquals2(t1, t2);
+        //}
+
+        //public override bool Equals(object obj)
+        //{
+        //    return base.Equals(obj);
+        //}
+
+        //public override int GetHashCode()
+        //{
+        //    return base.GetHashCode();
+        //}
+    }
 }
